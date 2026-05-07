@@ -53,6 +53,21 @@ NSURLSession* getSharedSession()
     return [NSURLSession sharedSession];
 }
 
+void copyResponseHeaders(NSHTTPURLResponse* httpResponse, Response& response)
+{
+    auto allHeaders = [httpResponse allHeaderFields];
+    for (id key in allHeaders)
+    {
+        if (![key isKindOfClass:[NSString class]])
+            continue;
+        id value = allHeaders[key];
+        if (![value isKindOfClass:[NSString class]])
+            continue;
+        response.headers[Strings::toStdString((NSString*) key)] =
+            Strings::toStdString((NSString*) value);
+    }
+}
+
 SafeResult performSyncRequest(NSURLRequest* request)
 {
     auto result = SafeResult();
@@ -94,6 +109,7 @@ Response httpRequestInternal(const Request& req)
     {
         auto httpResponse = (NSHTTPURLResponse*) raw.response.get();
         response.statusCode = (int) httpResponse.statusCode;
+        copyResponseHeaders(httpResponse, response);
     }
 
     response.content = Strings::toStdString(raw.data.get());
@@ -162,6 +178,7 @@ Response downloadFileInternal(const Request& req,
         auto httpResponse =
             (NSHTTPURLResponse*) result.response.get();
         response.statusCode = (int) httpResponse.statusCode;
+        copyResponseHeaders(httpResponse, response);
     }
 
     if (tempLocation)

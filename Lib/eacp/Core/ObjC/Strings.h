@@ -10,4 +10,5 @@ NSString* toNSString(const std::string& input);
 
 std::string toStdString(NSError* error);
 std::string toStdString(NSData* data);
+std::string toStdString(NSString* string);
 } // namespace eacp::Strings

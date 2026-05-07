@@ -80,6 +80,16 @@ Response httpRequestInternal(const Request& req)
 
     auto response = Response();
     response.statusCode = static_cast<int>(responseMessage.StatusCode());
+
+    for (auto&& [name, value]: responseMessage.Headers())
+        response.headers[winrt::to_string(name)] = winrt::to_string(value);
+
+    if (responseMessage.Content())
+    {
+        for (auto&& [name, value]: responseMessage.Content().Headers())
+            response.headers[winrt::to_string(name)] = winrt::to_string(value);
+    }
+
     auto rawRes = responseMessage.Content().ReadAsStringAsync().get();
     response.content = winrt::to_string(rawRes);
 

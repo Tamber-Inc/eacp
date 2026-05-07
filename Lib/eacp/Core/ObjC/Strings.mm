@@ -28,4 +28,13 @@ std::string toStdString(NSData* data)
 
     return {(const char*) data.bytes, data.length};
 }
+
+std::string toStdString(NSString* string)
+{
+    if (string == nil)
+        return {};
+
+    auto utf8 = [string UTF8String];
+    return utf8 ? std::string(utf8) : std::string();
+}
 }

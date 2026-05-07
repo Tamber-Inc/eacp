@@ -3,6 +3,7 @@
 #include <curl/curl.h>
 
 #include <cstdio>
+#include <map>
 #include <stdexcept>
 #include <string>
 
@@ -26,6 +27,33 @@ size_t writeToString(void* contents, size_t size, size_t nmemb, void* userp)
 {
     auto total = size * nmemb;
     static_cast<std::string*>(userp)->append(static_cast<char*>(contents), total);
+    return total;
+}
+
+std::string trim(const std::string& s)
+{
+    auto begin = s.find_first_not_of(" \t\r\n");
+    if (begin == std::string::npos)
+        return {};
+    auto end = s.find_last_not_of(" \t\r\n");
+    return s.substr(begin, end - begin + 1);
+}
+
+size_t headerCallback(char* buffer, size_t size, size_t nitems, void* userp)
+{
+    auto total = size * nitems;
+    auto line = std::string(buffer, total);
+    auto& headers = *static_cast<std::map<std::string, std::string>*>(userp);
+
+    auto colon = line.find(':');
+    if (colon != std::string::npos)
+    {
+        auto key = trim(line.substr(0, colon));
+        auto value = trim(line.substr(colon + 1));
+        if (!key.empty())
+            headers[key] = value;
+    }
+
     return total;
 }
 
@@ -93,11 +121,14 @@ Response httpRequestInternal(const Request& req)
     curl_easy_setopt(curl.handle, CURLOPT_WRITEFUNCTION, writeToString);
     curl_easy_setopt(curl.handle, CURLOPT_WRITEDATA, &body);
 
+    auto response = Response();
+    curl_easy_setopt(curl.handle, CURLOPT_HEADERFUNCTION, headerCallback);
+    curl_easy_setopt(curl.handle, CURLOPT_HEADERDATA, &response.headers);
+
     auto rc = curl_easy_perform(curl.handle);
     if (rc != CURLE_OK)
         throw std::runtime_error(curl_easy_strerror(rc));
 
-    auto response = Response();
     long status = 0;
     curl_easy_getinfo(curl.handle, CURLINFO_RESPONSE_CODE, &status);
     response.statusCode = (int) status;
@@ -122,13 +153,16 @@ Response downloadFileInternal(const Request& req, const std::string& filePath)
 
     curl_easy_setopt(curl.handle, CURLOPT_WRITEDATA, file);
 
+    auto response = Response();
+    curl_easy_setopt(curl.handle, CURLOPT_HEADERFUNCTION, headerCallback);
+    curl_easy_setopt(curl.handle, CURLOPT_HEADERDATA, &response.headers);
+
     auto rc = curl_easy_perform(curl.handle);
     std::fclose(file);
 
     if (rc != CURLE_OK)
         throw std::runtime_error(curl_easy_strerror(rc));
 
-    auto response = Response();
     long status = 0;
     curl_easy_getinfo(curl.handle, CURLINFO_RESPONSE_CODE, &status);
     response.statusCode = (int) status;

@@ -70,11 +70,11 @@ struct ParallelExchange
     bool completed = false;
 };
 
-void performParallelExchange(Server& server,
-                             const std::vector<Request>& requests,
-                             ParallelExchange& out,
-                             std::chrono::milliseconds timeout
-                             = std::chrono::seconds(10))
+void performParallelExchange(
+    Server& server,
+    const std::vector<Request>& requests,
+    ParallelExchange& out,
+    std::chrono::milliseconds timeout = std::chrono::seconds(10))
 {
     auto n = requests.size();
     out.responses.assign(n, Response());
@@ -92,8 +92,7 @@ void performParallelExchange(Server& server,
                 workers.emplace_back(
                     [&, i]
                     {
-                        out.responses[i] =
-                            eacp::HTTP::httpRequest(requests[i]);
+                        out.responses[i] = eacp::HTTP::httpRequest(requests[i]);
                         if (remaining->fetch_sub(1) == 1)
                             callAsync([] { stopEventLoop(); });
                     });
@@ -244,6 +243,36 @@ auto tResponseHeadersForwarded =
     check(ex.completed);
     check(ex.clientResponse.statusCode == 200);
     check(ex.clientResponse.content == "{}");
+    check(ex.clientResponse.headers["Content-Type"] == "application/json");
+    check(ex.clientResponse.headers["X-Server-Tag"] == "eacp-test");
+};
+
+auto tMultipleResponseHeadersRoundTrip =
+    test("HttpServer/multipleResponseHeadersRoundTripToClient") = []
+{
+    auto server = Server();
+    auto port = reservePort();
+    auto ex = Exchange();
+
+    auto ok = server.listen(port,
+                            [&](const Request&)
+                            {
+                                auto res = Response();
+                                res.statusCode = 200;
+                                res.headers["X-Trace-Id"] = "abc-123";
+                                res.headers["X-Build"] = "v42";
+                                res.headers["Cache-Control"] = "no-store";
+                                return res;
+                            });
+    check(ok);
+
+    performExchange(server, Request(baseUrl(port) + "/multi"), ex);
+
+    check(ex.completed);
+    check(ex.clientResponse.statusCode == 200);
+    check(ex.clientResponse.headers["X-Trace-Id"] == "abc-123");
+    check(ex.clientResponse.headers["X-Build"] == "v42");
+    check(ex.clientResponse.headers["Cache-Control"] == "no-store");
 };
 
 auto tDefaultStatusIs200 = test("HttpServer/responseWithoutStatusDefaultsTo200") = []
@@ -475,19 +504,18 @@ auto tThreadPoolModeAssignsDistinctRemotePorts =
     auto remotePortsMutex = std::mutex();
     auto remotePorts = std::vector<int>();
 
-    auto ok = server.listen(
-        port,
-        [&](const Request& req)
-        {
-            {
-                auto lock = std::lock_guard(remotePortsMutex);
-                remotePorts.push_back(req.remotePort);
-            }
-            auto res = Response();
-            res.statusCode = 200;
-            res.content = "ok";
-            return res;
-        });
+    auto ok = server.listen(port,
+                            [&](const Request& req)
+                            {
+                                {
+                                    auto lock = std::lock_guard(remotePortsMutex);
+                                    remotePorts.push_back(req.remotePort);
+                                }
+                                auto res = Response();
+                                res.statusCode = 200;
+                                res.content = "ok";
+                                return res;
+                            });
     check(ok);
 
     auto requests = std::vector<Request>();
@@ -509,4 +537,319 @@ auto tThreadPoolModeAssignsDistinctRemotePorts =
     auto sorted = remotePorts;
     std::sort(sorted.begin(), sorted.end());
     check(std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end());
+};
+
+using eacp::HTTP::Error;
+using eacp::HTTP::throwError;
+
+auto tErrorStatusAndMessage =
+    test("HttpError/constructorFromStatusAndMessageBuildsPlainTextResponse") = []
+{
+    auto err = Error(418, "I'm a teapot");
+    check(err.statusCode == 418);
+    check(std::string(err.what()) == "I'm a teapot");
+    check(err.response.statusCode == 418);
+    check(err.response.content == "I'm a teapot");
+    check(err.response.headers["Content-Type"] == "text/plain");
+};
+
+auto tErrorFromResponse = test("HttpError/constructorFromResponsePreservesIt") = []
+{
+    auto res = Response();
+    res.statusCode = 422;
+    res.content = "{\"x\":1}";
+    res.headers["Content-Type"] = "application/json";
+
+    auto err = Error(res);
+    check(err.statusCode == 422);
+    check(err.response.statusCode == 422);
+    check(err.response.content == "{\"x\":1}");
+    check(err.response.headers["Content-Type"] == "application/json");
+};
+
+auto tThrowErrorThrowsErrorWithStatus =
+    test("HttpError/throwErrorThrowsErrorCarryingStatus") = []
+{
+    auto caught = false;
+    try
+    {
+        throwError("nope", 401);
+    }
+    catch (const Error& e)
+    {
+        caught = true;
+        check(e.statusCode == 401);
+        check(std::string(e.what()) == "nope");
+    }
+    check(caught);
+};
+
+auto tThrowErrorDefaultStatusIs400 = test("HttpError/throwErrorDefaultsTo400") = []
+{
+    auto caught = false;
+    try
+    {
+        throwError("bad");
+    }
+    catch (const Error& e)
+    {
+        caught = true;
+        check(e.statusCode == 400);
+    }
+    check(caught);
+};
+
+auto tRouterDispatchesGet = test("HttpServer/routerDispatchesGetRoute") = []
+{
+    auto server = Server();
+    auto port = reservePort();
+    auto ex = Exchange();
+
+    server.get("/ping",
+               [&](const Request& req)
+               {
+                   ex.received = req;
+                   ex.handlerCalled = true;
+                   auto res = Response();
+                   res.statusCode = 200;
+                   res.content = "pong";
+                   return res;
+               });
+
+    check(server.listen(port));
+    performExchange(server, Request(baseUrl(port) + "/ping"), ex);
+
+    check(ex.completed);
+    check(ex.handlerCalled);
+    check(ex.received.type == "GET");
+    check(ex.clientResponse.statusCode == 200);
+    check(ex.clientResponse.content == "pong");
+};
+
+auto tRouterDispatchesPost = test("HttpServer/routerDispatchesPostRoute") = []
+{
+    auto server = Server();
+    auto port = reservePort();
+    auto ex = Exchange();
+
+    server.post("/items",
+                [&](const Request& req)
+                {
+                    ex.received = req;
+                    ex.handlerCalled = true;
+                    auto res = Response();
+                    res.statusCode = 201;
+                    res.content = "made";
+                    return res;
+                });
+
+    check(server.listen(port));
+    performExchange(server, Request::post(baseUrl(port) + "/items", "body"), ex);
+
+    check(ex.completed);
+    check(ex.received.type == "POST");
+    check(ex.received.body == "body");
+    check(ex.clientResponse.statusCode == 201);
+    check(ex.clientResponse.content == "made");
+};
+
+auto tRouterMethodAndPathAreBothMatched =
+    test("HttpServer/routerSeparatesByMethodAndPath") = []
+{
+    auto server = Server();
+    auto port = reservePort();
+
+    auto getCalls = std::atomic<int> {0};
+    auto postCalls = std::atomic<int> {0};
+
+    server.get("/x",
+               [&](const Request&)
+               {
+                   getCalls.fetch_add(1);
+                   auto res = Response();
+                   res.statusCode = 200;
+                   res.content = "g";
+                   return res;
+               });
+    server.post("/x",
+                [&](const Request&)
+                {
+                    postCalls.fetch_add(1);
+                    auto res = Response();
+                    res.statusCode = 200;
+                    res.content = "p";
+                    return res;
+                });
+
+    check(server.listen(port));
+
+    auto requests = std::vector<Request>();
+    requests.emplace_back(baseUrl(port) + "/x");
+    requests.emplace_back(Request::post(baseUrl(port) + "/x", ""));
+
+    auto out = ParallelExchange();
+    performParallelExchange(server, requests, out);
+
+    check(out.completed);
+    check(getCalls.load() == 1);
+    check(postCalls.load() == 1);
+
+    auto bodies = std::vector<std::string>();
+    for (auto& r: out.responses)
+        bodies.push_back(r.content);
+    std::sort(bodies.begin(), bodies.end());
+    check(bodies[0] == "g");
+    check(bodies[1] == "p");
+};
+
+auto tRouterUnknownReturns404 = test("HttpServer/routerReturns404WhenNoMatch") = []
+{
+    auto server = Server();
+    auto port = reservePort();
+    auto ex = Exchange();
+
+    server.get("/exists",
+               [](const Request&)
+               {
+                   auto r = Response();
+                   r.statusCode = 200;
+                   return r;
+               });
+
+    check(server.listen(port));
+    performExchange(server, Request(baseUrl(port) + "/missing"), ex);
+
+    check(ex.completed);
+    check(ex.clientResponse.statusCode == 404);
+    check(ex.clientResponse.content == "Not Found");
+};
+
+auto tRouterStripsQueryString =
+    test("HttpServer/routerMatchesPathIgnoringQueryString") = []
+{
+    auto server = Server();
+    auto port = reservePort();
+    auto ex = Exchange();
+
+    server.get("/search",
+               [&](const Request& req)
+               {
+                   ex.received = req;
+                   ex.handlerCalled = true;
+                   auto res = Response();
+                   res.statusCode = 200;
+                   res.content = "ok";
+                   return res;
+               });
+
+    check(server.listen(port));
+    performExchange(server, Request(baseUrl(port) + "/search?q=cat&limit=5"), ex);
+
+    check(ex.completed);
+    check(ex.handlerCalled);
+    check(ex.received.params["q"] == "cat");
+    check(ex.received.params["limit"] == "5");
+    check(ex.clientResponse.statusCode == 200);
+};
+
+auto tRouterCatchesError = test("HttpServer/routerConvertsErrorToItsResponse") = []
+{
+    auto server = Server();
+    auto port = reservePort();
+    auto ex = Exchange();
+
+    server.get("/fail",
+               [](const Request&) -> Response { throwError("not allowed", 403); });
+
+    check(server.listen(port));
+    performExchange(server, Request(baseUrl(port) + "/fail"), ex);
+
+    check(ex.completed);
+    check(ex.clientResponse.statusCode == 403);
+    check(ex.clientResponse.content == "not allowed");
+};
+
+auto tRouterCatchesErrorWithCustomResponse =
+    test("HttpServer/routerForwardsErrorPrebuiltResponse") = []
+{
+    auto server = Server();
+    auto port = reservePort();
+    auto ex = Exchange();
+
+    server.get("/fail",
+               [](const Request&) -> Response
+               {
+                   auto res = Response();
+                   res.statusCode = 451;
+                   res.content = "{\"why\":\"legal\"}";
+                   res.headers["Content-Type"] = "application/json";
+                   throw Error(std::move(res));
+               });
+
+    check(server.listen(port));
+    performExchange(server, Request(baseUrl(port) + "/fail"), ex);
+
+    check(ex.completed);
+    check(ex.clientResponse.statusCode == 451);
+    check(ex.clientResponse.content == "{\"why\":\"legal\"}");
+};
+
+auto tRouterCatchesUnknownExceptionAs500 =
+    test("HttpServer/routerConvertsUnknownExceptionTo500") = []
+{
+    auto server = Server();
+    auto port = reservePort();
+    auto ex = Exchange();
+
+    server.get("/boom",
+               [](const Request&) -> Response
+               { throw std::runtime_error("kaboom"); });
+
+    check(server.listen(port));
+    performExchange(server, Request(baseUrl(port) + "/boom"), ex);
+
+    check(ex.completed);
+    check(ex.clientResponse.statusCode == 500);
+    check(ex.clientResponse.content == "kaboom");
+};
+
+auto tListenWithoutHandlerStartsServer =
+    test("HttpServer/listenWithoutHandlerStartsServer") = []
+{
+    auto server = Server();
+    auto port = reservePort();
+    check(server.listen(port));
+    server.stop();
+};
+
+auto tAddRouteRegistersCustomMethod =
+    test("HttpServer/addRouteRegistersArbitraryMethod") = []
+{
+    auto server = Server();
+    auto port = reservePort();
+    auto ex = Exchange();
+
+    server.addRoute("PATCH",
+                    "/r",
+                    [&](const Request& req)
+                    {
+                        ex.received = req;
+                        ex.handlerCalled = true;
+                        auto res = Response();
+                        res.statusCode = 200;
+                        res.content = "patched";
+                        return res;
+                    });
+
+    check(server.listen(port));
+
+    auto clientReq = Request(baseUrl(port) + "/r");
+    clientReq.type = "PATCH";
+    performExchange(server, clientReq, ex);
+
+    check(ex.completed);
+    check(ex.handlerCalled);
+    check(ex.received.type == "PATCH");
+    check(ex.clientResponse.statusCode == 200);
+    check(ex.clientResponse.content == "patched");
 };

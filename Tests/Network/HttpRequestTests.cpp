@@ -233,3 +233,136 @@ auto tParseQuerySkipsBlankSegments =
     check(p["a"] == "1");
     check(p["b"] == "2");
 };
+
+auto tHasHeaderExactMatch = test("HttpRequest/hasHeaderFindsExactKey") = []
+{
+    auto req = Request();
+    req.headers["X-Token"] = "abc";
+    check(req.hasHeader("X-Token"));
+};
+
+auto tHasHeaderCaseInsensitive = test("HttpRequest/hasHeaderIsCaseInsensitive") = []
+{
+    auto req = Request();
+    req.headers["X-Token"] = "abc";
+    check(req.hasHeader("x-token"));
+    check(req.hasHeader("X-TOKEN"));
+};
+
+auto tHasHeaderMissing = test("HttpRequest/hasHeaderReturnsFalseForMissing") = []
+{
+    auto req = Request();
+    req.headers["X-Token"] = "abc";
+    check(!req.hasHeader("X-Other"));
+};
+
+auto tGetHeaderExactMatch = test("HttpRequest/getHeaderReturnsValue") = []
+{
+    auto req = Request();
+    req.headers["X-Token"] = "abc";
+    check(req.getHeader("X-Token") == "abc");
+};
+
+auto tGetHeaderCaseInsensitive = test("HttpRequest/getHeaderIsCaseInsensitive") = []
+{
+    auto req = Request();
+    req.headers["Content-Type"] = "application/json";
+    check(req.getHeader("content-type") == "application/json");
+    check(req.getHeader("CONTENT-TYPE") == "application/json");
+};
+
+auto tGetHeaderMissing = test("HttpRequest/getHeaderReturnsEmptyForMissing") = []
+{
+    auto req = Request();
+    check(req.getHeader("X-Missing").empty());
+};
+
+auto tHasParam = test("HttpRequest/hasParamFindsKey") = []
+{
+    auto req = Request();
+    req.params["q"] = "hello";
+    check(req.hasParam("q"));
+    check(!req.hasParam("missing"));
+};
+
+auto tGetParam = test("HttpRequest/getParamReturnsValue") = []
+{
+    auto req = Request();
+    req.params["q"] = "hello";
+    check(req.getParam("q") == "hello");
+    check(req.getParam("missing").empty());
+};
+
+auto tPathWithoutQueryNoQuery =
+    test("HttpRequest/pathWithoutQueryReturnsUrlWhenNoQuery") = []
+{
+    auto req = Request();
+    req.url = "/foo/bar";
+    check(req.pathWithoutQuery() == "/foo/bar");
+};
+
+auto tPathWithoutQueryStripsQuery =
+    test("HttpRequest/pathWithoutQueryStripsQueryString") = []
+{
+    auto req = Request();
+    req.url = "/foo/bar?x=1&y=2";
+    check(req.pathWithoutQuery() == "/foo/bar");
+};
+
+auto tPathWithoutQueryEmptyQuery =
+    test("HttpRequest/pathWithoutQueryStripsEmptyQuery") = []
+{
+    auto req = Request();
+    req.url = "/foo?";
+    check(req.pathWithoutQuery() == "/foo");
+};
+
+auto tResponseSetContent = test("HttpResponse/setContentSetsBodyAndContentType") = []
+{
+    auto res = Response();
+    res.setContent("hello", "text/plain");
+    check(res.content == "hello");
+    check(res.headers["Content-Type"] == "text/plain");
+};
+
+auto tResponseSetContentOverwrites =
+    test("HttpResponse/setContentOverwritesContentType") = []
+{
+    auto res = Response();
+    res.headers["Content-Type"] = "text/html";
+    res.setContent("{}", "application/json");
+    check(res.headers["Content-Type"] == "application/json");
+};
+
+auto tResponseSetHeader = test("HttpResponse/setHeaderStoresValue") = []
+{
+    auto res = Response();
+    res.setHeader("X-Trace-Id", "abc");
+    check(res.headers["X-Trace-Id"] == "abc");
+};
+
+auto tResponseSetHeaderOverwrites =
+    test("HttpResponse/setHeaderOverwritesExistingKey") = []
+{
+    auto res = Response();
+    res.setHeader("X-Trace-Id", "abc");
+    res.setHeader("X-Trace-Id", "xyz");
+    check(res.headers["X-Trace-Id"] == "xyz");
+};
+
+auto tResponseSetRedirectDefault = test("HttpResponse/setRedirectDefaultsTo302") = []
+{
+    auto res = Response();
+    res.setRedirect("/login");
+    check(res.statusCode == 302);
+    check(res.headers["Location"] == "/login");
+};
+
+auto tResponseSetRedirectExplicitStatus =
+    test("HttpResponse/setRedirectAcceptsExplicitStatus") = []
+{
+    auto res = Response();
+    res.setRedirect("/new-home", 301);
+    check(res.statusCode == 301);
+    check(res.headers["Location"] == "/new-home");
+};
