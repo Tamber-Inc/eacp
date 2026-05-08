@@ -17,6 +17,41 @@ p { margin: 0 0 1.5rem; opacity: 0.75; }
     align-items: center;
 }
 
+.toggle
+{
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.toggle button
+{
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    border: 1px solid #3a3a4a;
+    background: transparent;
+    color: #e6e6f0;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.toggle button:hover { border-color: #5a6cff; }
+
+.toggle button.active
+{
+    background: #5a6cff;
+    border-color: #5a6cff;
+}
+
+.viewport
+{
+    display: grid;
+    place-items: center;
+    min-height: 380px;
+    width: 100%;
+}
+
 .stack
 {
     width: 360px;
@@ -30,4 +65,10 @@ p { margin: 0 0 1.5rem; opacity: 0.75; }
 {
     grid-area: 1 / 1;
     will-change: transform, filter;
+}
+
+.shader
+{
+    border-radius: 8px;
+    box-shadow: 0 6px 28px rgba(0, 0, 0, 0.5);
 }

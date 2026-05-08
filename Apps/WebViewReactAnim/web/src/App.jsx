@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useEventRate, useNativeEvent } from './bridge';
+import ShaderCanvas from './ShaderCanvas';
 
 const petals = [0, 60, 120, 180, 240, 300];
 
@@ -8,21 +10,58 @@ const layers = [
     { speed: 2.6, size: 130, hue: 240 },
 ];
 
+const visualOptions = [
+    { id: 'pinwheel', label: 'SVG Pinwheel' },
+    { id: 'shader', label: 'WebGL Mandelbulb' },
+];
+
 export default function App()
 {
     const { angle } = useNativeEvent('tick', { angle: 0 });
     const hz = useEventRate('tick');
-    const pulse = 1 + 0.18 * Math.sin(angle * Math.PI / 60);
+    const [view, setView] = useState('pinwheel');
 
     return (
         <div className="stage">
             <h1>Native-driven React animation</h1>
-            <p>The pinwheel angle is pushed from native ticks ({hz} Hz measured).</p>
-            <div className="stack" style={{ transform: `scale(${pulse})` }}>
-                {layers.map((layer, i) => (
-                    <Wheel key={i} angle={angle * layer.speed} {...layer} />
-                ))}
+            <p>The angle is pushed from native ticks ({hz} Hz measured).</p>
+
+            <Toggle value={view} onChange={setView} options={visualOptions} />
+
+            <div className="viewport">
+                {view === 'pinwheel'
+                    ? <Pinwheel angle={angle} />
+                    : <ShaderCanvas angle={angle} />}
             </div>
+        </div>
+    );
+}
+
+function Toggle({ value, onChange, options })
+{
+    return (
+        <div className="toggle">
+            {options.map(opt => (
+                <button
+                    key={opt.id}
+                    className={opt.id === value ? 'active' : ''}
+                    onClick={() => onChange(opt.id)}>
+                    {opt.label}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+function Pinwheel({ angle })
+{
+    const pulse = 1 + 0.18 * Math.sin(angle * Math.PI / 60);
+
+    return (
+        <div className="stack" style={{ transform: `scale(${pulse})` }}>
+            {layers.map((layer, i) => (
+                <Wheel key={i} angle={angle * layer.speed} {...layer} />
+            ))}
         </div>
     );
 }

@@ -1,1 +1,0 @@
-body{font-family:-apple-system,sans-serif;margin:0;padding:2rem;background:#1e1e28;color:#e6e6f0}h1{margin:0 0 .5rem;font-size:1.4rem}p{margin:0 0 1.5rem;opacity:.75}.stage{display:flex;flex-direction:column;align-items:center}.stack{width:360px;height:360px;display:grid;place-items:center;will-change:transform}.stack svg{grid-area:1 / 1;will-change:transform,filter}
