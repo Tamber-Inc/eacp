@@ -1,9 +1,16 @@
-add_executable(HttpRpcDemo Main.cpp)
-target_link_libraries(HttpRpcDemo PRIVATE eacp-network-rpc)
-
-target_include_directories(HttpRpcDemo PRIVATE
+add_executable(HttpRpcClient Client.cpp)
+target_link_libraries(HttpRpcClient PRIVATE eacp-network-rpc)
+target_include_directories(HttpRpcClient PRIVATE
         ${WEBVIEWEMBED_CPP_GENERATED_DIR})
+add_dependencies(HttpRpcClient WebViewEmbedCppSchema)
+set_default_target_setting(HttpRpcClient)
 
-add_dependencies(HttpRpcDemo WebViewEmbedCppSchema)
-
-set_default_target_setting(HttpRpcDemo)
+add_executable(HttpRpcServer
+        Server.cpp
+        ${CMAKE_SOURCE_DIR}/Apps/WebViewEmbed/Commands.cpp)
+target_link_libraries(HttpRpcServer PRIVATE eacp-network-rpc)
+target_include_directories(HttpRpcServer PRIVATE
+        ${WEBVIEWEMBED_CPP_GENERATED_DIR}
+        ${CMAKE_SOURCE_DIR}/Apps/WebViewEmbed)
+add_dependencies(HttpRpcServer WebViewEmbedCppSchema)
+set_default_target_setting(HttpRpcServer)

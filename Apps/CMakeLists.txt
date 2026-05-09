@@ -1,3 +1,5 @@
+set(CMAKE_FOLDER Examples)
+
 add_subdirectory(Console)
 add_subdirectory(HTTP)
 add_subdirectory(BasicHTTP)
