@@ -32,8 +32,11 @@ Response makeResultResponse(const Miro::JSON& result)
 
 } // namespace
 
-Server::Server(eacp::HTTP::Server& server, std::string basePathToUse)
-    : basePath(std::move(basePathToUse))
+Server::Server(eacp::HTTP::Server& server,
+               Miro::Bridge& bridgeToUse,
+               std::string basePathToUse)
+    : bridge(bridgeToUse)
+    , basePath(std::move(basePathToUse))
 {
     server.post(basePath, [this](const Request& req) { return handle(req); });
 }
@@ -69,7 +72,7 @@ Response Server::handle(const Request& req)
 
     try
     {
-        auto result = commands.dispatch(command, payload);
+        auto result = bridge.dispatch(command, payload);
         return makeResultResponse(result);
     }
     catch (const Miro::UnknownCommandError& e)

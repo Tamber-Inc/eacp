@@ -2,6 +2,8 @@
 #include <eacp/Network/HTTPRpc/RpcServer.h>
 #include <eacp/Network/HTTPServer/HttpServer.h>
 
+#include <Miro/Miro.h>
+
 #include <iostream>
 
 int main(int argc, char** argv)
@@ -10,9 +12,11 @@ int main(int argc, char** argv)
     if (argc > 1)
         port = std::atoi(argv[1]);
 
+    auto bridge = Miro::Bridge {};
+    bridge.useStaticRegistry();
+
     auto httpServer = eacp::HTTP::Server {};
-    auto rpc = eacp::HTTP::Rpc::Server {httpServer};
-    rpc.useStaticRegistry();
+    auto rpc = eacp::HTTP::Rpc::Server {httpServer, bridge};
 
     if (! httpServer.listen(port))
     {

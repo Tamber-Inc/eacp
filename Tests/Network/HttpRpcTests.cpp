@@ -94,8 +94,9 @@ auto tRpcDispatchesTypedHandler =
     auto port = reservePort();
 
     auto httpServer = eacp::HTTP::Server();
-    auto rpc = Rpc::Server {httpServer};
-    rpc.on<GreetRequest, GreetResponse>("greet", &greet);
+    auto bridge = Miro::Bridge {};
+    auto rpc = Rpc::Server {httpServer, bridge};
+    bridge.on<GreetRequest, GreetResponse>("greet", &greet);
 
     auto ok = httpServer.listen(port);
     check(ok);
@@ -120,7 +121,8 @@ auto tRpcUnknownCommandReturns404 =
     auto port = reservePort();
 
     auto httpServer = eacp::HTTP::Server();
-    auto rpc = Rpc::Server {httpServer};
+    auto bridge = Miro::Bridge {};
+    auto rpc = Rpc::Server {httpServer, bridge};
 
     auto ok = httpServer.listen(port);
     check(ok);
@@ -143,8 +145,9 @@ auto tRpcHttpErrorPropagatesStatus =
     auto port = reservePort();
 
     auto httpServer = eacp::HTTP::Server();
-    auto rpc = Rpc::Server {httpServer};
-    rpc.on<GreetRequest, GreetResponse>("greet", &greet);
+    auto bridge = Miro::Bridge {};
+    auto rpc = Rpc::Server {httpServer, bridge};
+    bridge.on<GreetRequest, GreetResponse>("greet", &greet);
 
     auto ok = httpServer.listen(port);
     check(ok);
@@ -169,8 +172,9 @@ auto tRpcUnexpectedExceptionReturns500 =
     auto port = reservePort();
 
     auto httpServer = eacp::HTTP::Server();
-    auto rpc = Rpc::Server {httpServer};
-    rpc.on<GreetRequest, GreetResponse>("boom", &boom);
+    auto bridge = Miro::Bridge {};
+    auto rpc = Rpc::Server {httpServer, bridge};
+    bridge.on<GreetRequest, GreetResponse>("boom", &boom);
 
     auto ok = httpServer.listen(port);
     check(ok);
@@ -193,7 +197,8 @@ auto tRpcMalformedBodyReturns400 =
     auto port = reservePort();
 
     auto httpServer = eacp::HTTP::Server();
-    auto rpc = Rpc::Server {httpServer};
+    auto bridge = Miro::Bridge {};
+    auto rpc = Rpc::Server {httpServer, bridge};
 
     auto ok = httpServer.listen(port);
     check(ok);
@@ -242,8 +247,9 @@ auto tRpcClientRoundTripsTypedCall = test("HttpRpc/clientRoundTripsTypedCall") =
     auto port = reservePort();
 
     auto httpServer = eacp::HTTP::Server();
-    auto rpc = Rpc::Server {httpServer};
-    rpc.on<GreetRequest, GreetResponse>("greet", &greet);
+    auto bridge = Miro::Bridge {};
+    auto rpc = Rpc::Server {httpServer, bridge};
+    bridge.on<GreetRequest, GreetResponse>("greet", &greet);
     auto ok = httpServer.listen(port);
     check(ok);
 
@@ -266,8 +272,9 @@ auto tRpcClientThrowsOnHandlerError = test("HttpRpc/clientThrowsOnHandlerError")
     auto port = reservePort();
 
     auto httpServer = eacp::HTTP::Server();
-    auto rpc = Rpc::Server {httpServer};
-    rpc.on<GreetRequest, GreetResponse>("greet", &greet);
+    auto bridge = Miro::Bridge {};
+    auto rpc = Rpc::Server {httpServer, bridge};
+    bridge.on<GreetRequest, GreetResponse>("greet", &greet);
     auto ok = httpServer.listen(port);
     check(ok);
 
@@ -301,7 +308,8 @@ auto tRpcClientThrowsOnUnknownCommand =
     auto port = reservePort();
 
     auto httpServer = eacp::HTTP::Server();
-    auto rpc = Rpc::Server {httpServer};
+    auto bridge = Miro::Bridge {};
+    auto rpc = Rpc::Server {httpServer, bridge};
     auto ok = httpServer.listen(port);
     check(ok);
 
@@ -331,8 +339,9 @@ auto tRpcAsInvokerWorks = test("HttpRpc/asInvokerProducesUsableInvokeCallable") 
     auto port = reservePort();
 
     auto httpServer = eacp::HTTP::Server();
-    auto rpc = Rpc::Server {httpServer};
-    rpc.on<GreetRequest, GreetResponse>("greet", &greet);
+    auto bridge = Miro::Bridge {};
+    auto rpc = Rpc::Server {httpServer, bridge};
+    bridge.on<GreetRequest, GreetResponse>("greet", &greet);
     auto ok = httpServer.listen(port);
     check(ok);
 

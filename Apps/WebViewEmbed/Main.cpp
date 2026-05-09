@@ -13,8 +13,9 @@ struct MyApp
         bridge.useStaticRegistry();
     }
 
+    Miro::Bridge bridge;
     WebView webView {embeddedOptions("WebApp")};
-    WebViewBridge bridge {webView};
+    WebViewBridge transport {webView, bridge};
     Window window;
 };
 

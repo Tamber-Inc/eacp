@@ -69,7 +69,7 @@ constexpr const char* bridgeShim = R"JS(
 })();
 )JS";
 
-std::string jsStringLiteral(const std::string& value)
+std::string jsStringLiteral(std::string_view value)
 {
     auto out = std::string {"\""};
     out.reserve(value.size() + 2);
@@ -113,8 +113,12 @@ std::string jsStringLiteral(const std::string& value)
 }
 } // namespace
 
-WebViewBridge::WebViewBridge(WebView& webViewToUse)
+WebViewBridge::WebViewBridge(WebView& webViewToUse, Miro::Bridge& bridgeToUse)
     : webView(webViewToUse)
+    , bridge(bridgeToUse)
+    , subscription(bridge.addBroadcaster(
+          [this](std::string_view event, const Miro::Json::Value& payload)
+          { broadcast(event, payload); }))
 {
     webView.addUserScript(bridgeShim, true);
     webView.addScriptMessageHandler(
@@ -157,7 +161,7 @@ void WebViewBridge::onMessage(const std::string& body)
 
     try
     {
-        auto result = commands.dispatch(command, payload);
+        auto result = bridge.dispatch(command, payload);
         deliver(id, result, nullptr);
     }
     catch (const std::exception& e)
@@ -185,8 +189,8 @@ void WebViewBridge::deliver(double id,
     webView.evaluateJavaScript(script);
 }
 
-void WebViewBridge::dispatchEvent(const std::string& event,
-                                  const Miro::Json::Value& payload)
+void WebViewBridge::broadcast(std::string_view event,
+                              const Miro::Json::Value& payload)
 {
     auto payloadJson = Miro::Json::print(payload);
 

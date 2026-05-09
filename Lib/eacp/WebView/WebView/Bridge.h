@@ -3,7 +3,7 @@
 #include "WebView.h"
 
 #include <Miro/Miro.h>
-#include <functional>
+
 #include <string>
 
 namespace eacp::Graphics
@@ -11,44 +11,35 @@ namespace eacp::Graphics
 
 using EmptyMessage = Miro::EmptyValue;
 
+// Transport adapter that routes WebView <-> C++ messages through a
+// Miro::Bridge. The Bridge owns the CommandTable and the event
+// registry; this class is responsible only for the WebView wire
+// format (script message handler + injected JS shim + an event
+// broadcaster registered on construction and removed on destruction).
+//
+// The Bridge can be shared with other transports (e.g. an
+// HTTP::Rpc::Server) so a single set of typed handlers — including
+// those declared via MIRO_EXPORT_COMMAND — is served over multiple
+// wires concurrently.
 class WebViewBridge
 {
 public:
-    explicit WebViewBridge(WebView& webView);
+    WebViewBridge(WebView& webView, Miro::Bridge& bridge);
     ~WebViewBridge();
 
-    template <typename Req, typename Res>
-    void on(const std::string& command, std::function<Res(const Req&)> handler)
-    {
-        commands.on<Req, Res>(command, std::move(handler));
-    }
-
-    template <typename Req, typename Res>
-    void on(const std::string& command, Res (*handler)(const Req&))
-    {
-        commands.on<Req, Res>(command, handler);
-    }
-
-    template <typename T>
-    void send(const std::string& event, const T& payload)
-    {
-        dispatchEvent(event, Miro::toJSON(payload));
-    }
-
-    void useStaticRegistry()
-    {
-        Miro::CommandExport::registerStaticCommandsInto(commands);
-    }
+    WebViewBridge(const WebViewBridge&) = delete;
+    WebViewBridge& operator=(const WebViewBridge&) = delete;
 
 private:
     void onMessage(const std::string& body);
     void deliver(double id,
                  const Miro::Json::Value& result,
                  const std::string* error);
-    void dispatchEvent(const std::string& event, const Miro::Json::Value& payload);
+    void broadcast(std::string_view event, const Miro::Json::Value& payload);
 
     WebView& webView;
-    Miro::CommandTable commands;
+    Miro::Bridge& bridge;
+    Miro::Bridge::Subscription subscription;
 };
 
 } // namespace eacp::Graphics

@@ -34,10 +34,11 @@ struct MyApp
     }
 
     Clock::time_point start = Clock::now();
+    Miro::Bridge bridge;
     WebView webView {embeddedOptions("ReactAnimApp")};
-    WebViewBridge bridge {webView};
+    WebViewBridge transport {webView, bridge};
     Window window;
-    Threads::Timer timer {[this] { bridge.send("tick", currentTick()); }, 120};
+    Threads::Timer timer {[this] { bridge.emit("tick", currentTick()); }, 120};
 };
 
 int main()
