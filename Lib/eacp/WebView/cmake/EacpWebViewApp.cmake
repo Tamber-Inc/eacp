@@ -1,7 +1,7 @@
 # eacp_add_webview_app — single entry point for native + WebView + RPC apps.
 #
 # Folds five separate calls (add_executable, target_link_libraries,
-# miro_add_type_export, eacp_webview_generate_backend, eacp_webview_add_vite)
+# miro_export, eacp_webview_generate_backend, eacp_webview_add_vite)
 # plus the macOS bundle plumbing into one call.
 #
 # Usage:
@@ -21,6 +21,11 @@
 # COMMAND_SOURCES both end up in the executable; only COMMAND_SOURCES feed
 # the schema-export tool. When COMMAND_SOURCES is empty the helper skips
 # the Miro pipeline and just builds the vite frontend.
+#
+# The schema target created here is named ${TARGET}Schema. To emit the
+# same registrations to additional output dirs (e.g. C++ headers for a
+# sibling target), call miro_export_emit(${TARGET}Schema ...) after
+# this function returns — no need to declare a second exporter.
 function(eacp_add_webview_app TARGET)
     set(oneValueArgs WEB_DIR BUNDLE_ID BUNDLE_NAME NAMESPACE CATEGORY SCHEMA_NAME)
     set(multiValueArgs SOURCES COMMAND_SOURCES SCHEMA_FORMATS)
@@ -57,11 +62,10 @@ function(eacp_add_webview_app TARGET)
     target_link_libraries(${TARGET} PRIVATE eacp-webview eacp-network-rpc)
 
     if (ARG_COMMAND_SOURCES)
-        # SOURCES paths in miro_add_type_export are resolved against
+        # SOURCES paths in miro_export are resolved against
         # CMAKE_CURRENT_SOURCE_DIR at *call* site, which inside this function
         # is the caller's directory — so bare filenames work.
-        miro_add_type_export(
-                NAME ${TARGET}Schema
+        miro_export(${TARGET}Schema
                 SOURCES ${ARG_COMMAND_SOURCES}
                 OUTPUT_DIR ${GENERATED_DIR}
                 OUTPUT_NAME ${ARG_SCHEMA_NAME}

@@ -5,19 +5,15 @@ eacp_add_webview_app(WebViewEmbed
         BUNDLE_ID       com.eacp.webviewembed
         BUNDLE_NAME     "WebView Embed")
 
-# Secondary codegen: emit C++ headers for the same schema so the
-# HttpRpcDemo sibling can consume them without repeating the export.
+# Same schema, additional emit so the HttpRpcDemo sibling can consume
+# the typed C++ headers without spawning a second exporter executable.
 set(WEBVIEWEMBED_CPP_GENERATED_DIR
         ${CMAKE_CURRENT_BINARY_DIR}/cpp-generated)
 
-miro_add_type_export(
-        NAME WebViewEmbedCppSchema
-        SOURCES Commands.cpp
+miro_export_emit(WebViewEmbedSchema
         OUTPUT_DIR ${WEBVIEWEMBED_CPP_GENERATED_DIR}
         OUTPUT_NAME schema
         FORMATS cpp-miro cpp-client)
 
 set(WEBVIEWEMBED_CPP_GENERATED_DIR
         ${WEBVIEWEMBED_CPP_GENERATED_DIR} PARENT_SCOPE)
-
-add_dependencies(WebViewEmbed WebViewEmbedCppSchema)
