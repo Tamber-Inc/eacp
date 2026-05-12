@@ -23,16 +23,15 @@
 #   )
 #
 # Schema layout:
-#   - ${TARGET}Schema is a STATIC library carrying COMMAND_SOURCES.
-#     Linked into ${TARGET} with WHOLE_ARCHIVE so MIRO_EXPORT_COMMAND
-#     static initializers fire at startup. Sibling consumers (e.g. an
-#     HTTP RPC server living in a peer app) link it the same way via
-#     eacp_target_uses_schema(<consumer> ${TARGET}Schema HANDLERS).
-#   - ${TARGET}Schema_codegen runs at build time, emitting TS files
-#     into ${WEB_DIR}/src/generated and C++ headers into
-#     ${CMAKE_CURRENT_BINARY_DIR}/cpp-generated. Both directories are
-#     added as INTERFACE include dirs on the schema library, so any
-#     consumer that links the library picks them up automatically.
+#   - ${TARGET}Schema is the INTERFACE library produced by miro_export.
+#     It carries the generated-header include dirs and the registration
+#     source list. eacp_target_uses_schema(<consumer> ${TARGET}Schema
+#     HANDLERS) splices those sources into the consumer so the
+#     MIRO_EXPORT_COMMAND static initializers fire at startup.
+#   - Build-time codegen emits TS files into ${WEB_DIR}/src/generated
+#     and C++ headers into ${CMAKE_CURRENT_BINARY_DIR}/cpp-generated.
+#     Both directories ride along on the schema's INTERFACE includes,
+#     so any consumer that links the schema picks them up automatically.
 function(eacp_add_webview_app TARGET)
     set(oneValueArgs WEB_DIR BUNDLE_ID BUNDLE_NAME NAMESPACE CATEGORY SCHEMA_NAME)
     set(multiValueArgs SOURCES COMMAND_SOURCES SCHEMA_FORMATS)
