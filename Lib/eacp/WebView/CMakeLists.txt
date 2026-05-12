@@ -40,3 +40,20 @@ endif ()
 set_default_target_setting(eacp-webview)
 eacp_enable_unity_build(eacp-webview)
 add_ide_sources(eacp-webview)
+
+# Build-time tool: turns WebView/Resources/EacpBackend.ts.template into a
+# concrete backend.ts shim for a given schema basename. The template is
+# embedded into the executable via ResEmbed, mirroring how Miro ships its
+# BridgeRuntime.ts inside libMiro. Skipped when cross-compiling — the
+# tool only runs on the host during the developer build.
+if (NOT CMAKE_CROSSCOMPILING)
+    add_executable(eacp-webview-backend-gen Generator/Main.cpp)
+    target_link_libraries(eacp-webview-backend-gen PRIVATE ResEmbed)
+
+    res_embed_add(eacp-webview-backend-gen
+            FILES WebView/Resources/EacpBackend.ts.template
+            NAMESPACE EacpWebViewBackendGen
+            CATEGORY EacpWebViewBackendGen)
+
+    set_default_target_setting(eacp-webview-backend-gen)
+endif ()
