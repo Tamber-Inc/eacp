@@ -88,7 +88,6 @@ function(eacp_add_webview_app TARGET)
                 FORMATS cpp-miro cpp-client)
 
         eacp_webview_generate_backend(
-                TARGET ${TARGET}
                 OUTPUT_DIR ${TS_GENERATED_DIR}
                 BASENAME ${ARG_SCHEMA_NAME})
 
@@ -99,14 +98,6 @@ function(eacp_add_webview_app TARGET)
             SOURCE_DIR ${ARG_WEB_DIR}
             NAMESPACE ${ARG_NAMESPACE}
             CATEGORY ${ARG_CATEGORY})
-
-    # When CMake drives the Vite build (EACP_WEBVIEW_VITE_BUILD=ON) the
-    # generated backend shim must exist before npm runs. Both targets
-    # already hang off ${TARGET}, but Ninja would otherwise build them
-    # in parallel — make Vite explicitly wait on the shim.
-    if (ARG_COMMAND_SOURCES AND TARGET ${TARGET}-vite-build)
-        add_dependencies(${TARGET}-vite-build ${TARGET}-webview-backend-shim)
-    endif ()
 
     set_target_properties(${TARGET} PROPERTIES
             MACOSX_BUNDLE TRUE

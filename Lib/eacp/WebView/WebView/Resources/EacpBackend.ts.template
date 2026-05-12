@@ -1,5 +1,5 @@
-import { makeBackend } from './__EACP_BASENAME__.backend';
-import { makeBridge, type Transport } from './__EACP_BASENAME__.bridge';
+import { makeBackend } from './@BASENAME@.backend';
+import { makeBridge, type Transport } from './@BASENAME@.bridge';
 
 interface EacpBridge
 {
