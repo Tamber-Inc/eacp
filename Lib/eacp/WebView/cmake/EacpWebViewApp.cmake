@@ -98,6 +98,12 @@ function(eacp_add_webview_app TARGET)
             NAMESPACE ${ARG_NAMESPACE}
             CATEGORY ${ARG_CATEGORY})
 
+    # Vite imports the codegen'd TS modules, so the build-time vite step
+    # must run after the schema's codegen exec emits them.
+    if (TARGET ${TARGET}-vite-build AND TARGET ${TARGET}Schema_Codegen)
+        add_dependencies(${TARGET}-vite-build ${TARGET}Schema_Codegen)
+    endif ()
+
     set_target_properties(${TARGET} PROPERTIES
             MACOSX_BUNDLE TRUE
             MACOSX_BUNDLE_BUNDLE_NAME "${ARG_BUNDLE_NAME}"

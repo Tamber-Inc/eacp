@@ -13,7 +13,7 @@ export class UnknownCommandError extends Error
     }
 }
 
-export async function dispatch(handlers: Handlers, command: string, payload: unknown): Promise<unknown>
+export async function dispatch(handlers: Handlers, command: string, _payload: unknown): Promise<unknown>
 {
     switch (command)
     {

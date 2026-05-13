@@ -1,5 +1,5 @@
 option(EACP_WEBVIEW_VITE_DEV "Build embedded webview apps against a live Vite dev server" OFF)
-option(EACP_WEBVIEW_VITE_BUILD "Let CMake drive 'npm install' + 'vite build' for embedded webview apps. When OFF, the prebuilt dist committed at SOURCE_DIR/dist is embedded as-is." OFF)
+option(EACP_WEBVIEW_VITE_BUILD "Let CMake drive 'npm install' + 'vite build' for embedded webview apps. When OFF, the prebuilt dist committed at SOURCE_DIR/dist is embedded as-is. NOTE: when ON, the first 'cmake --build' produces the dist but embeds an empty resource registry (configure-time glob saw no files); CONFIGURE_DEPENDS makes the next build invocation reglob and embed for real." OFF)
 set(EACP_WEBVIEW_VITE_DEV_PORT "5173" CACHE STRING
         "Localhost port of the Vite dev server when EACP_WEBVIEW_VITE_DEV is ON")
 
@@ -34,7 +34,7 @@ function(eacp_webview_add_vite TARGET)
         return()
     endif ()
 
-    if (EACP_WEBVIEW_VITE_BUILD)
+    if (EACP_WEBVIEW_VITE_BUILD AND EXISTS "${ARG_SOURCE_DIR}/package.json")
         find_program(NPM_EXECUTABLE npm REQUIRED)
         set(BUILD_DIST_DIR "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}-vite-dist")
 
@@ -49,16 +49,14 @@ function(eacp_webview_add_vite TARGET)
             endif ()
         endif ()
 
-        if (NOT EXISTS "${BUILD_DIST_DIR}")
-            message(STATUS "eacp_webview_add_vite(${TARGET}): initial Vite build")
-            execute_process(
-                    COMMAND ${NPM_EXECUTABLE} run build --
-                            --outDir "${BUILD_DIST_DIR}" --emptyOutDir
-                    WORKING_DIRECTORY "${ARG_SOURCE_DIR}"
-                    RESULT_VARIABLE NPM_BUILD_RESULT)
-            if (NOT NPM_BUILD_RESULT EQUAL 0)
-                message(FATAL_ERROR "vite build failed for ${TARGET}")
-            endif ()
+        # ResourceGenerator rejects an empty input list, so seed BUILD_DIST_DIR
+        # with a placeholder at configure time. Vite's --emptyOutDir wipes it
+        # at build time, so the custom_command rewrites it after each build.
+        file(MAKE_DIRECTORY "${BUILD_DIST_DIR}")
+        set(VITE_PLACEHOLDER "${BUILD_DIST_DIR}/placeholder.txt")
+        if (NOT EXISTS "${VITE_PLACEHOLDER}")
+            file(WRITE "${VITE_PLACEHOLDER}"
+                    "Vite build placeholder — overwritten on each build.\n")
         endif ()
 
         file(GLOB_RECURSE VITE_SOURCES CONFIGURE_DEPENDS
@@ -74,6 +72,7 @@ function(eacp_webview_add_vite TARGET)
                 OUTPUT "${VITE_STAMP}"
                 COMMAND ${NPM_EXECUTABLE} run build --
                         --outDir "${BUILD_DIST_DIR}" --emptyOutDir
+                COMMAND ${CMAKE_COMMAND} -E touch "${VITE_PLACEHOLDER}"
                 COMMAND ${CMAKE_COMMAND} -E touch "${VITE_STAMP}"
                 WORKING_DIRECTORY "${ARG_SOURCE_DIR}"
                 DEPENDS ${VITE_SOURCES}
