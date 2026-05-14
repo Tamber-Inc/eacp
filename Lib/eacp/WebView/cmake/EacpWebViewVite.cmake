@@ -1,5 +1,5 @@
 option(EACP_WEBVIEW_VITE_DEV "Build embedded webview apps against a live Vite dev server" OFF)
-option(EACP_WEBVIEW_VITE_BUILD "Let CMake drive 'npm install' + 'vite build' for embedded webview apps. When OFF, the prebuilt dist committed at SOURCE_DIR/dist is embedded as-is. NOTE: when ON, the first 'cmake --build' produces the dist but embeds an empty resource registry (configure-time glob saw no files); CONFIGURE_DEPENDS makes the next build invocation reglob and embed for real." OFF)
+option(EACP_WEBVIEW_VITE_BUILD "Let CMake drive 'npm install' + 'vite build' for embedded webview apps. When OFF, the prebuilt dist committed at SOURCE_DIR/dist is embedded as-is. NOTE: when ON, the first 'cmake --build' produces the dist but embeds an empty resource registry (configure-time glob saw no files); CONFIGURE_DEPENDS makes the next build invocation reglob and embed for real." ON)
 set(EACP_WEBVIEW_VITE_DEV_PORT "5173" CACHE STRING
         "Localhost port of the Vite dev server when EACP_WEBVIEW_VITE_DEV is ON")
 
