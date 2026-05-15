@@ -9,7 +9,7 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
 
-option(EACP_UNITY_BUILD "Compile eacp libraries as CMake unity builds" ON)
+option(EACP_UNITY_BUILD "Compile eacp libraries as CMake unity builds" OFF)
 
 include(TargetSetup)
 include(CPM)
