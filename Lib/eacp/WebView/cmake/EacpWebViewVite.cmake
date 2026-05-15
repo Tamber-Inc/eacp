@@ -18,7 +18,7 @@ function(eacp_webview_add_vite TARGET)
     endif ()
 
     if (EACP_WEBVIEW_VITE_BUILD AND EXISTS "${ARG_SOURCE_DIR}/package.json")
-        find_program(NPM_EXECUTABLE npm REQUIRED)
+        find_program(NPM_EXECUTABLE NAMES npm.cmd npm REQUIRED)
         set(BUILD_DIST_DIR "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}-vite-dist")
 
         if (NOT EXISTS "${ARG_SOURCE_DIR}/node_modules")
