@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { createShaderRenderer } from './shader';
+import { createShaderRenderer, type ShaderRenderer } from './shader';
 
 const FRAGMENT = `
 precision highp float;
@@ -108,11 +108,22 @@ void main()
 }
 `;
 
-export default function ShaderCanvas({ angle, width = 560, height = 320 })
+interface ShaderCanvasProps
 {
-    const rendererRef = useRef(null);
+    angle: number;
+    width?: number;
+    height?: number;
+}
 
-    const setCanvas = useCallback((canvas) =>
+export default function ShaderCanvas({
+    angle,
+    width = 560,
+    height = 320,
+}: ShaderCanvasProps)
+{
+    const rendererRef = useRef<ShaderRenderer | null>(null);
+
+    const setCanvas = useCallback((canvas: HTMLCanvasElement | null) =>
     {
         if (!canvas)
         {

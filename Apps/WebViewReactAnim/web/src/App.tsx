@@ -4,13 +4,28 @@ import ShaderCanvas from './ShaderCanvas';
 
 const petals = [0, 60, 120, 180, 240, 300];
 
-const layers = [
+interface Layer
+{
+    speed: number;
+    size: number;
+    hue: number;
+}
+
+const layers: Layer[] = [
     { speed: 1.0, size: 320, hue: 0 },
     { speed: -1.7, size: 220, hue: 120 },
     { speed: 2.6, size: 130, hue: 240 },
 ];
 
-const visualOptions = [
+type ViewId = 'pinwheel' | 'shader';
+
+interface ViewOption
+{
+    id: ViewId;
+    label: string;
+}
+
+const visualOptions: ViewOption[] = [
     { id: 'pinwheel', label: 'SVG Pinwheel' },
     { id: 'shader', label: 'WebGL Mandelbulb' },
 ];
@@ -18,7 +33,7 @@ const visualOptions = [
 export default function App()
 {
     const { angle, hz } = useNativeTick();
-    const [view, setView] = useState('pinwheel');
+    const [view, setView] = useState<ViewId>('pinwheel');
 
     return (
         <div className="stage">
@@ -36,7 +51,14 @@ export default function App()
     );
 }
 
-function Toggle({ value, onChange, options })
+interface ToggleProps
+{
+    value: ViewId;
+    onChange: (next: ViewId) => void;
+    options: ViewOption[];
+}
+
+function Toggle({ value, onChange, options }: ToggleProps)
 {
     return (
         <div className="toggle">
@@ -52,7 +74,7 @@ function Toggle({ value, onChange, options })
     );
 }
 
-function Pinwheel({ angle })
+function Pinwheel({ angle }: { angle: number })
 {
     const pulse = 1 + 0.18 * Math.sin(angle * Math.PI / 60);
 
@@ -65,7 +87,12 @@ function Pinwheel({ angle })
     );
 }
 
-function Wheel({ angle, size, hue })
+interface WheelProps extends Layer
+{
+    angle: number;
+}
+
+function Wheel({ angle, size, hue }: WheelProps)
 {
     const style = {
         width: size,
@@ -82,7 +109,7 @@ function Wheel({ angle, size, hue })
     );
 }
 
-function Petal({ rotation })
+function Petal({ rotation }: { rotation: number })
 {
     return (
         <path

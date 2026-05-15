@@ -3,7 +3,15 @@ attribute vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
 `;
 
-export function createShaderRenderer(canvas, fragmentSource)
+export interface ShaderRenderer
+{
+    draw(angle: number): void;
+    dispose(): void;
+}
+
+export function createShaderRenderer(
+    canvas: HTMLCanvasElement,
+    fragmentSource: string): ShaderRenderer
 {
     const gl = canvas.getContext('webgl');
     if (!gl) throw new Error('WebGL not supported');
@@ -39,23 +47,31 @@ export function createShaderRenderer(canvas, fragmentSource)
     };
 }
 
-function link(gl, vertexSource, fragmentSource)
+function link(
+    gl: WebGLRenderingContext,
+    vertexSource: string,
+    fragmentSource: string): WebGLProgram
 {
     const program = gl.createProgram();
+    if (!program) throw new Error('Failed to create WebGL program');
     gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vertexSource));
     gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragmentSource));
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS))
-        throw new Error(gl.getProgramInfoLog(program));
+        throw new Error(gl.getProgramInfoLog(program) ?? 'link failed');
     return program;
 }
 
-function compile(gl, type, source)
+function compile(
+    gl: WebGLRenderingContext,
+    type: GLenum,
+    source: string): WebGLShader
 {
     const shader = gl.createShader(type);
+    if (!shader) throw new Error('Failed to create WebGL shader');
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
-        throw new Error(gl.getShaderInfoLog(shader));
+        throw new Error(gl.getShaderInfoLog(shader) ?? 'compile failed');
     return shader;
 }

@@ -1,14 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
+import { backend } from './generated/backend';
+import type { Tick } from './generated/schema';
+
+export interface NativeTick extends Tick
+{
+    hz: number;
+}
 
 const windowMs = 1000;
 
-export function useNativeTick()
+export function useNativeTick(): NativeTick
 {
-    const [tick, setTick] = useState({ angle: 0, hz: 0 });
+    const [tick, setTick] = useState<NativeTick>({ angle: 0, hz: 0 });
     const counter = useRef({ count: 0, since: performance.now() });
 
-    useEffect(() => window.eacp.on('tick', (next) =>
+    useEffect(() => backend.on?.('tick', (payload) =>
     {
+        const next = payload as Tick;
         counter.current.count++;
         const elapsed = performance.now() - counter.current.since;
 
