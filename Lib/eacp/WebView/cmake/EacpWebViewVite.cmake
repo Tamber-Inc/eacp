@@ -66,8 +66,9 @@ function(eacp_webview_add_vite TARGET)
                 COMMENT "Building Vite project for ${TARGET}"
                 VERBATIM)
 
-        add_custom_target(${TARGET}-vite-build DEPENDS "${VITE_STAMP}")
-        add_dependencies(${TARGET} ${TARGET}-vite-build)
+        target_sources(${TARGET} PRIVATE "${VITE_STAMP}")
+        set_source_files_properties("${VITE_STAMP}" PROPERTIES
+                GENERATED TRUE HEADER_FILE_ONLY TRUE)
 
         res_embed_add(${TARGET}
                 DIRECTORY "${BUILD_DIST_DIR}"
