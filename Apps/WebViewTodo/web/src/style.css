@@ -1,0 +1,213 @@
+:root
+{
+    color-scheme: dark;
+}
+
+body
+{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 2rem 1.5rem;
+    background: radial-gradient(circle at top, #2b2740 0%, #1a1726 60%, #14111d 100%);
+    color: #e6e6f0;
+    min-height: 100vh;
+}
+
+main
+{
+    max-width: 560px;
+    margin: 0 auto;
+}
+
+header h1
+{
+    font-size: 2.5rem;
+    font-weight: 200;
+    letter-spacing: 0.05em;
+    margin: 0 0 0.5rem;
+    color: #f4f1ff;
+}
+
+header .sub
+{
+    margin: 0 0 1.5rem;
+    color: #9b96b3;
+    line-height: 1.5;
+    font-size: 0.95rem;
+}
+
+code
+{
+    background: #2a273a;
+    padding: 0.05rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.85em;
+    color: #c8c0eb;
+}
+
+.card
+{
+    background: rgba(28, 24, 41, 0.85);
+    border: 1px solid rgba(120, 108, 178, 0.25);
+    border-radius: 12px;
+    box-shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+}
+
+.composer
+{
+    display: flex;
+    gap: 0.5rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid rgba(120, 108, 178, 0.18);
+}
+
+.composer input
+{
+    flex: 1;
+    background: #1d1a2c;
+    border: 1px solid #36314c;
+    border-radius: 6px;
+    color: inherit;
+    font-size: 1rem;
+    padding: 0.55rem 0.75rem;
+    outline: none;
+    transition: border-color 120ms ease;
+}
+
+.composer input:focus
+{
+    border-color: #8b7fd6;
+}
+
+.composer button
+{
+    background: #6f5fd1;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0 1rem;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 120ms ease;
+}
+
+.composer button:hover:not(:disabled)
+{
+    background: #826fe6;
+}
+
+.composer button:disabled
+{
+    background: #3a3550;
+    color: #75708e;
+    cursor: not-allowed;
+}
+
+.list
+{
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.item
+{
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 1.25rem;
+    border-bottom: 1px solid rgba(120, 108, 178, 0.12);
+    transition: background 120ms ease;
+}
+
+.item:last-child { border-bottom: none; }
+.item:hover { background: rgba(120, 108, 178, 0.06); }
+
+.item input[type="checkbox"]
+{
+    width: 1.1rem;
+    height: 1.1rem;
+    accent-color: #6f5fd1;
+    cursor: pointer;
+}
+
+.item .text
+{
+    flex: 1;
+    cursor: text;
+    user-select: none;
+}
+
+.item.done .text
+{
+    color: #6f6a85;
+    text-decoration: line-through;
+}
+
+.item .edit
+{
+    flex: 1;
+    background: #1d1a2c;
+    border: 1px solid #6f5fd1;
+    border-radius: 4px;
+    color: inherit;
+    font-size: 1rem;
+    padding: 0.3rem 0.5rem;
+    outline: none;
+}
+
+.item .remove
+{
+    background: transparent;
+    color: #6f6a85;
+    border: none;
+    cursor: pointer;
+    font-size: 1.3rem;
+    padding: 0.1rem 0.5rem;
+    opacity: 0;
+    transition: opacity 120ms ease, color 120ms ease;
+}
+
+.item:hover .remove { opacity: 1; }
+.item .remove:hover { color: #ff7a8a; }
+
+.empty
+{
+    padding: 1.5rem 1.25rem;
+    color: #75708e;
+    font-style: italic;
+    text-align: center;
+}
+
+.footer
+{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1.25rem;
+    background: rgba(20, 17, 32, 0.6);
+    border-top: 1px solid rgba(120, 108, 178, 0.18);
+    font-size: 0.85rem;
+    color: #9b96b3;
+}
+
+.link
+{
+    background: transparent;
+    border: none;
+    color: #b7adf0;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0;
+}
+
+.link:disabled
+{
+    color: #4b466a;
+    cursor: default;
+}
+
+.link:not(:disabled):hover { text-decoration: underline; }

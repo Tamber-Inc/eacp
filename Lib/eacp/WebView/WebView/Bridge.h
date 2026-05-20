@@ -4,6 +4,8 @@
 
 #include <Miro/Miro.h>
 
+#include <ea_data_structures/Pointers/Broadcaster.h>
+
 #include <string>
 
 namespace eacp::Graphics
@@ -34,11 +36,11 @@ private:
     void deliver(double id,
                  const Miro::Json::Value& result,
                  const std::string* error);
-    void broadcast(std::string_view event, const Miro::Json::Value& payload);
+    void broadcast();
 
     WebView& webView;
     Miro::Bridge bridge;
-    Miro::Bridge::Subscription subscription;
+    EA::Listener emitListener;
 };
 
 } // namespace eacp::Graphics

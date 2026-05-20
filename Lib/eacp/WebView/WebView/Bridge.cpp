@@ -117,9 +117,9 @@ std::string jsStringLiteral(std::string_view value)
 
 WebViewBridge::WebViewBridge(WebView& webViewToUse)
     : webView(webViewToUse)
-    , subscription(bridge.addBroadcaster(
-          [this](std::string_view event, const Miro::Json::Value& payload)
-          { broadcast(event, payload); }))
+    , emitListener(bridge.onEmit,
+                   [this] { broadcast(); },
+                   EA::Listener::Modes::TriggerOnEvent)
 {
     bridge.useStaticRegistry();
     webView.addUserScript(bridgeShim, true);
@@ -211,16 +211,15 @@ void WebViewBridge::deliver(double id,
     webView.evaluateJavaScript(script);
 }
 
-void WebViewBridge::broadcast(std::string_view event,
-                              const Miro::Json::Value& payload)
+void WebViewBridge::broadcast()
 {
-    auto payloadJson = Miro::Json::print(payload);
+    auto payloadJson = Miro::Json::print(bridge.currentPayload());
 
     if (payloadJson.empty())
         payloadJson = "null";
 
     auto script = std::string {"window.__eacp&&window.__eacp.dispatch("}
-                  + jsStringLiteral(event) + "," + payloadJson + ");";
+                  + jsStringLiteral(bridge.currentEvent()) + "," + payloadJson + ");";
 
     webView.evaluateJavaScript(script);
 }
