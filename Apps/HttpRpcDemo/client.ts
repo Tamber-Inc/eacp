@@ -1,4 +1,4 @@
-import { makeBackend } from '../WebViewEmbed/web/src/generated/schema.backend.ts';
+import { makeBackend } from './generated/schema.backend.ts';
 
 const baseUrl = process.argv[2] ?? 'http://localhost:8088/rpc';
 

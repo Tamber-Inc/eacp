@@ -2,7 +2,7 @@
 import express from 'express';
 import type { Request, Response } from 'express';
 import { dispatch, UnknownCommandError, type Handlers } from
-    '../WebViewEmbed/web/src/generated/schema.handlers.ts';
+    './generated/schema.handlers.ts';
 
 const port = Number(process.argv[2] ?? 8088);
 

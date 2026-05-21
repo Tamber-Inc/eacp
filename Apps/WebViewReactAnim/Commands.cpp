@@ -1,5 +1,7 @@
 #include "Types.h"
 
+#include <eacp/WebView/WebView.h>
+
 #include <chrono>
 #include <cmath>
 
@@ -17,4 +19,4 @@ Tick getCurrentTick()
 
 MIRO_EXPORT_COMMAND(getCurrentTick)
 
-MIRO_EXPORT_EVENT(tick, Tick)
+EACP_EVENT(tick, Tick)

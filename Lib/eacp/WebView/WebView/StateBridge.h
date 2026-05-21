@@ -124,3 +124,28 @@ EA::Vector<EA::OwningPointer<EA::Listener>>
         return 0;                                                                   \
     }();                                                                            \
     }
+
+// EACP_EVENT — push-only event with no C++-side store and no auto-
+// binder. Use for patterns where the C++ side fires bridge.emit()
+// directly (e.g. a timer or a callback) and the frontend only needs
+// the typed `ServerEvents[name]` mapping for `backend.on(name, ...)`.
+//
+// Hooks codegen still emits a `use<Name>` factory backed by
+// `makeNativeEvent` (initial value = toJSON(T{})). If the matching
+// `get<Name>` command also exists, the formatter promotes it to
+// `makeBridgeStore` automatically — but no get-command is required.
+//
+//   EACP_EVENT(tick, Tick)
+//
+// __VA_ARGS__ on the type slot so callers can pass templated types
+// with commas without breaking macro expansion (e.g.
+// `EACP_EVENT(prices, std::map<std::string, double>)`).
+#define EACP_EVENT(name, ...)                                                       \
+    namespace                                                                       \
+    {                                                                               \
+    [[maybe_unused]] const auto EACP_STATE_CAT(eacpEvent_, __LINE__) = []           \
+    {                                                                               \
+        ::eacp::Graphics::Detail::registerEvent<__VA_ARGS__>(#name);                \
+        return 0;                                                                   \
+    }();                                                                            \
+    }
