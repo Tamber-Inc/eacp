@@ -1,8 +1,15 @@
-option(EACP_WEBVIEW_VITE_BUILD "Let CMake drive 'npm install' + 'vite build' for embedded webview apps. When OFF, the prebuilt dist committed at SOURCE_DIR/dist is embedded as-is. NOTE: when ON, the first 'cmake --build' produces the dist but embeds an empty resource registry (configure-time glob saw no files); CONFIGURE_DEPENDS makes the next build invocation reglob and embed for real." ON)
+option(EACP_WEBVIEW_VITE_BUILD "Let CMake drive '<pm> install' + 'vite build' for embedded webview apps. When OFF, the prebuilt dist committed at SOURCE_DIR/dist is embedded as-is. NOTE: when ON, the first 'cmake --build' produces the dist but embeds an empty resource registry (configure-time glob saw no files); CONFIGURE_DEPENDS makes the next build invocation reglob and embed for real." ON)
+
+set(EACP_WEBVIEW_PACKAGE_MANAGER "npm" CACHE STRING
+        "Package manager used to drive embedded vite builds (e.g. npm, pnpm, yarn, bun). Can be overridden per-call via the PACKAGE_MANAGER argument to eacp_webview_add_vite.")
 
 function(eacp_webview_add_vite TARGET)
     cmake_parse_arguments(PARSE_ARGV 1 ARG ""
-            "SOURCE_DIR;DIST_DIR;NAMESPACE;CATEGORY" "")
+            "SOURCE_DIR;DIST_DIR;NAMESPACE;CATEGORY;PACKAGE_MANAGER" "")
+
+    if (NOT ARG_PACKAGE_MANAGER)
+        set(ARG_PACKAGE_MANAGER "${EACP_WEBVIEW_PACKAGE_MANAGER}")
+    endif ()
 
     if (NOT ARG_SOURCE_DIR)
         message(FATAL_ERROR "eacp_webview_add_vite: SOURCE_DIR is required")
@@ -18,17 +25,22 @@ function(eacp_webview_add_vite TARGET)
     endif ()
 
     if (EACP_WEBVIEW_VITE_BUILD AND EXISTS "${ARG_SOURCE_DIR}/package.json")
-        find_program(NPM_EXECUTABLE NAMES npm.cmd npm REQUIRED)
+        find_program(EACP_WEBVIEW_PM_EXECUTABLE_${ARG_PACKAGE_MANAGER}
+                NAMES ${ARG_PACKAGE_MANAGER}.cmd ${ARG_PACKAGE_MANAGER}
+                REQUIRED)
+        set(PM_EXECUTABLE "${EACP_WEBVIEW_PM_EXECUTABLE_${ARG_PACKAGE_MANAGER}}")
         set(BUILD_DIST_DIR "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}-vite-dist")
 
         if (NOT EXISTS "${ARG_SOURCE_DIR}/node_modules")
-            message(STATUS "eacp_webview_add_vite(${TARGET}): running npm install")
+            message(STATUS
+                    "eacp_webview_add_vite(${TARGET}): running ${ARG_PACKAGE_MANAGER} install")
             execute_process(
-                    COMMAND ${NPM_EXECUTABLE} install
+                    COMMAND ${PM_EXECUTABLE} install
                     WORKING_DIRECTORY "${ARG_SOURCE_DIR}"
-                    RESULT_VARIABLE NPM_INSTALL_RESULT)
-            if (NOT NPM_INSTALL_RESULT EQUAL 0)
-                message(FATAL_ERROR "npm install failed for ${TARGET}")
+                    RESULT_VARIABLE PM_INSTALL_RESULT)
+            if (NOT PM_INSTALL_RESULT EQUAL 0)
+                message(FATAL_ERROR
+                        "${ARG_PACKAGE_MANAGER} install failed for ${TARGET}")
             endif ()
         endif ()
 
@@ -53,17 +65,26 @@ function(eacp_webview_add_vite TARGET)
                 "${ARG_SOURCE_DIR}/vite.config.*"
                 "${ARG_SOURCE_DIR}/tsconfig*.json")
 
+        # npm requires `--` to forward args past its own CLI parser to the
+        # underlying script. pnpm passes `--` through literally, which breaks
+        # downstream tools (vite stops parsing at `--`). yarn / bun forward
+        # args directly without a separator. Emit `--` only for npm.
+        set(BUILD_CMD ${PM_EXECUTABLE} run build)
+        if (ARG_PACKAGE_MANAGER STREQUAL "npm")
+            list(APPEND BUILD_CMD "--")
+        endif ()
+        list(APPEND BUILD_CMD --outDir "${BUILD_DIST_DIR}" --emptyOutDir)
+
         set(VITE_STAMP "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}-vite.stamp")
         add_custom_command(
                 OUTPUT "${VITE_STAMP}"
-                COMMAND ${NPM_EXECUTABLE} run build --
-                        --outDir "${BUILD_DIST_DIR}" --emptyOutDir
+                COMMAND ${BUILD_CMD}
                 COMMAND ${CMAKE_COMMAND} -E copy
                         "${VITE_PLACEHOLDER_TEMPLATE}" "${VITE_PLACEHOLDER}"
                 COMMAND ${CMAKE_COMMAND} -E touch "${VITE_STAMP}"
                 WORKING_DIRECTORY "${ARG_SOURCE_DIR}"
                 DEPENDS ${VITE_SOURCES}
-                COMMENT "Building Vite project for ${TARGET}"
+                COMMENT "Building Vite project for ${TARGET} (${ARG_PACKAGE_MANAGER})"
                 VERBATIM)
 
         target_sources(${TARGET} PRIVATE "${VITE_STAMP}")
@@ -80,8 +101,8 @@ function(eacp_webview_add_vite TARGET)
     if (NOT EXISTS "${ARG_DIST_DIR}")
         message(FATAL_ERROR
                 "eacp_webview_add_vite(${TARGET}): prebuilt Vite dist not found at "
-                "${ARG_DIST_DIR}. Either run 'npm run build' in ${ARG_SOURCE_DIR} "
-                "and commit the output, or configure with "
+                "${ARG_DIST_DIR}. Either run '${ARG_PACKAGE_MANAGER} run build' in "
+                "${ARG_SOURCE_DIR} and commit the output, or configure with "
                 "-DEACP_WEBVIEW_VITE_BUILD=ON to have CMake drive the Vite build.")
     endif ()
 
