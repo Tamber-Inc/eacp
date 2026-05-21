@@ -1,14 +1,7 @@
 import { memo, useState } from 'react';
-import {
-    addTodo,
-    clearCompleted,
-    editTodo,
-    removeTodo,
-    toggleTodo,
-    useTodoIds,
-    useTodoItem,
-    useTodoSummary,
-} from './store';
+import { backend } from './generated/backend';
+import { useTodoIds, useTodoItem } from './generated/hooks';
+import { useTodoSummary } from './derived';
 
 export default function App()
 {
@@ -20,7 +13,7 @@ export default function App()
     {
         const text = draft.trim();
         if (text.length === 0) return;
-        void addTodo(text);
+        void backend.addTodo({ text });
         setDraft('');
     };
 
@@ -88,8 +81,8 @@ const TodoRow = memo(function TodoRow({ id }: { id: number })
     {
         const next = draft.trim();
         setEditing(false);
-        if (next.length === 0) void removeTodo(item.id);
-        else if (next !== item.text) void editTodo(item.id, next);
+        if (next.length === 0) void backend.removeTodo({ id: item.id });
+        else if (next !== item.text) void backend.editTodo({ id: item.id, text: next });
     };
 
     return (
@@ -97,7 +90,7 @@ const TodoRow = memo(function TodoRow({ id }: { id: number })
             <input
                 type="checkbox"
                 checked={item.completed}
-                onChange={() => void toggleTodo(item.id)}
+                onChange={() => void backend.toggleTodo({ id: item.id })}
             />
             {editing ? (
                 <input
@@ -126,7 +119,7 @@ const TodoRow = memo(function TodoRow({ id }: { id: number })
                 type="button"
                 className="remove"
                 aria-label="Remove"
-                onClick={() => void removeTodo(item.id)}
+                onClick={() => void backend.removeTodo({ id: item.id })}
             >
                 ×
             </button>
@@ -149,7 +142,7 @@ function TodoFooter()
                 type="button"
                 className="link"
                 disabled={summary.completed === 0}
-                onClick={() => void clearCompleted()}
+                onClick={() => void backend.clearCompleted()}
             >
                 Clear completed
             </button>

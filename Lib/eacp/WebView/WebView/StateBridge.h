@@ -81,10 +81,10 @@ EA::Vector<EA::OwningPointer<EA::Listener>>
 #define EACP_STATE_CAT(a, b) EACP_STATE_CAT2(a, b)
 
 // EACP_STATE — single-declaration state hub. Generates the StateValue
-// accessor, registers the typed bridge event via MIRO_EXPORT_EVENT,
-// and registers an auto-bind so any transport built later picks up
-// changes automatically. Replaces the old split across Types.h
-// (declaration), Commands.cpp (definition) and Main.cpp (bindToBridge).
+// accessor, registers the typed bridge event, and registers an auto-
+// bind so any transport built later picks up changes automatically.
+// Replaces the old split across Types.h (declaration), Commands.cpp
+// (definition) and Main.cpp (bindToBridge).
 //
 // Usage (must be in a TU, not a header):
 //   EACP_STATE(TodoState, todoState, todos, makeInitialState())
@@ -103,17 +103,50 @@ EA::Vector<EA::OwningPointer<EA::Listener>>
 // If the initial expression contains top-level commas (e.g. a brace
 // init list with multiple fields), wrap it in an extra set of parens
 // so the preprocessor sees one argument.
+//
+// Event registration and binder registration both happen inside one
+// static-init lambda so the order is locked together — important when
+// other TUs also register events, since a split would expose us to
+// unspecified inter-TU init ordering.
 #define EACP_STATE(T, accessor, eventName, ...)                                     \
     eacp::StateValue<T>& accessor()                                                 \
     {                                                                               \
         static auto state = eacp::StateValue<T> {__VA_ARGS__};                      \
         return state;                                                               \
     }                                                                               \
-    MIRO_EXPORT_EVENT(eventName, T)                                                 \
     namespace                                                                       \
     {                                                                               \
-    [[maybe_unused]] const auto EACP_STATE_CAT(eacpStateBinder_, __LINE__) = []     \
+    [[maybe_unused]] const auto EACP_STATE_CAT(eacpState_, __LINE__) = []           \
     {                                                                               \
+        ::Miro::CommandExport::Detail::registerEvent<T>(#eventName);                \
+        ::eacp::Graphics::Detail::registerStateBinder<T>(&accessor, #eventName);    \
+        return 0;                                                                   \
+    }();                                                                            \
+    }
+
+// EACP_KEYED_STATE — same as EACP_STATE but additionally declares the
+// payload as a keyed collection (a vector field on the payload, each
+// element identified by an id field). The codegen `hooks` format uses
+// this metadata to emit `useXxx` / `useXxxIds` / `useXxxItem` hooks
+// backed by `makeKeyedStore`, so the user gets per-id selector
+// re-renders for free.
+//
+//   EACP_KEYED_STATE(TodoState, todoState, todos,
+//                    items,            // collection field on TodoState
+//                    id,               // key field on TodoItem
+//                    makeInitialState())
+#define EACP_KEYED_STATE(T, accessor, eventName, collectionField, keyField, ...)    \
+    eacp::StateValue<T>& accessor()                                                 \
+    {                                                                               \
+        static auto state = eacp::StateValue<T> {__VA_ARGS__};                      \
+        return state;                                                               \
+    }                                                                               \
+    namespace                                                                       \
+    {                                                                               \
+    [[maybe_unused]] const auto EACP_STATE_CAT(eacpKeyedState_, __LINE__) = []      \
+    {                                                                               \
+        ::Miro::CommandExport::Detail::registerKeyedEvent<T>(                       \
+            #eventName, #collectionField, #keyField);                               \
         ::eacp::Graphics::Detail::registerStateBinder<T>(&accessor, #eventName);    \
         return 0;                                                                   \
     }();                                                                            \

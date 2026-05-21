@@ -30,4 +30,13 @@ function(eacp_webview_generate_react_hooks)
             "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../WebView/Resources/EacpReact.ts.template"
             "${ARG_OUTPUT_DIR}/${ARG_OUTPUT_NAME}.ts"
             @ONLY)
+
+    # Also emit a stable-named hooks.ts re-export so user code can
+    # `import { useTodos } from './generated/hooks'` regardless of the
+    # schema basename. The underlying `<basename>.hooks.ts` is the
+    # Miro-emitted hooks module; this shim just renames the import path.
+    configure_file(
+            "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../WebView/Resources/EacpHooks.ts.template"
+            "${ARG_OUTPUT_DIR}/hooks.ts"
+            @ONLY)
 endfunction()

@@ -18,7 +18,7 @@ TodoState makeInitialState()
 }
 } // namespace
 
-EACP_STATE(TodoState, todoState, todos, makeInitialState())
+EACP_KEYED_STATE(TodoState, todoState, todos, items, id, makeInitialState())
 
 TodoState getTodos()
 {

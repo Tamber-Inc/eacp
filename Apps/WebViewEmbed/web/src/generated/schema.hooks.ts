@@ -1,0 +1,16 @@
+// Generated. Do not edit by hand.
+//
+// Pre-wired React hooks for every registered bridge event.
+// Keyed states get useXxx / useXxxIds / useXxxItem; plain
+// states get useXxx; push-only events get useXxx via
+// makeNativeEvent. Initial values come from toJSON(T{}).
+
+import { backend } from './backend';
+import { makeBridgeStore } from './react';
+
+export const useParameters = makeBridgeStore({
+    backend,
+    event: 'parameters',
+    fetch: backend.getParameters,
+    initial: {"autoCycle":false,"counter":0,"level":0.5},
+});

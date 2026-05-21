@@ -1,0 +1,21 @@
+// Generated. Do not edit by hand.
+//
+// Pre-wired React hooks for every registered bridge event.
+// Keyed states get useXxx / useXxxIds / useXxxItem; plain
+// states get useXxx; push-only events get useXxx via
+// makeNativeEvent. Initial values come from toJSON(T{}).
+
+import { backend } from './backend';
+import { makeKeyedStore } from './react';
+
+const todosStore = makeKeyedStore({
+    backend,
+    event: 'todos',
+    fetch: backend.getTodos,
+    initial: {"items":[]},
+    getItems: (s) => s.items,
+    getKey:   (i) => i.id,
+});
+export const useTodos = todosStore.useAll;
+export const useTodoIds = todosStore.useIds;
+export const useTodoItem = todosStore.useItem;
