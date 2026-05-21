@@ -1,7 +1,5 @@
 #pragma once
 
-#include <eacp/Core/Utils/StateValue.h>
-
 #include <Miro/Miro.h>
 
 #include <string>
@@ -44,8 +42,6 @@ struct EditTodoRequest
 
     MIRO_REFLECT(id, text)
 };
-
-eacp::StateValue<TodoState>& todoState();
 
 TodoState getTodos();
 void addTodo(const AddTodoRequest& req);

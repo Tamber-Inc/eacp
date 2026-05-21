@@ -1,5 +1,7 @@
 #include "Bridge.h"
 
+#include "StateBridge.h"
+
 #include <optional>
 
 namespace eacp::Graphics
@@ -122,6 +124,7 @@ WebViewBridge::WebViewBridge(WebView& webViewToUse)
                    EA::Listener::Modes::TriggerOnEvent)
 {
     bridge.useStaticRegistry();
+    stateListeners = attachStaticStateBinders(bridge);
     webView.addUserScript(bridgeShim, true);
     webView.addScriptMessageHandler(
         bridgeChannel, [this](const std::string& body) { onMessage(body); });

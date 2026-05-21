@@ -163,9 +163,11 @@ export function makeNativeState<
 //     don't fit the "one set" shape; call typed commands on `backend`
 //     directly from event handlers.
 //
-// Selector hooks (re-render only on the slice you read) can be layered
-// on top by hand-writing a store with a Map-by-id + identity-preserving
-// apply step and exposing per-slice `useSyncExternalStore` hooks.
+// For keyed collections — i.e. a state whose payload contains a
+// vector of items, each identified by some id field — use
+// `makeKeyedStore` (defined further down) instead. It gives you
+// `{useAll, useIds, useItem}` hooks with per-item identity preservation
+// so a `<Row id={42}>` only re-renders when item 42 actually changes.
 //
 //   export const useParameters = makeBridgeStore({
 //       backend,
@@ -216,5 +218,134 @@ export function makeBridgeStore<
     return function useStore(): E[K]
     {
         return useSyncExternalStore(subscribe, getSnapshot);
+    };
+}
+
+// ---------- Keyed-collection store ----------
+//
+// Same wire-format contract as makeBridgeStore (fetch + event), but
+// the payload is treated as a keyed collection: items are indexed by
+// the result of `getKey(item)`, identity is preserved across snapshots
+// for items whose fields haven't changed (per `eq`), and the ids list
+// is only swapped when the order/membership actually shifts.
+//
+// The returned `useItem(id)` hook re-renders only when that specific
+// id's record changes; `useIds()` re-renders only on add/remove/
+// reorder; `useAll()` re-renders on every store update.
+//
+// Default equality is shallow over enumerable own properties — fine
+// for the typical "flat record" payload (id + a few primitives). Pass
+// `eq` if items contain nested objects you want to compare deeply, or
+// if reference equality is the only thing you care about (`eq: Object.is`).
+//
+//   const todos = makeKeyedStore({
+//       backend,
+//       event: 'todos',
+//       fetch: backend.getTodos,
+//       initial: { items: [] },
+//       getItems: s => s.items,
+//       getKey:   i => i.id,
+//   });
+//
+//   export const useTodos     = todos.useAll;
+//   export const useTodoIds   = todos.useIds;
+//   export const useTodoItem  = todos.useItem;
+
+export interface KeyedStoreConfig<
+    E extends object,
+    K extends Extract<keyof E, string>,
+    Item,
+    Id,
+>
+{
+    backend: EventCapableBackend<E>;
+    event: K;
+    fetch: () => Promise<E[K]>;
+    initial: E[K];
+    getItems: (state: E[K]) => readonly Item[];
+    getKey: (item: Item) => Id;
+    eq?: (a: Item, b: Item) => boolean;
+}
+
+export interface KeyedStore<
+    E extends object,
+    K extends Extract<keyof E, string>,
+    Item,
+    Id,
+>
+{
+    useAll: () => E[K];
+    useIds: () => readonly Id[];
+    useItem: (id: Id) => Item | undefined;
+}
+
+function shallowEqual<T extends object>(a: T, b: T): boolean
+{
+    if (a === b) return true;
+    const aKeys = Object.keys(a) as (keyof T)[];
+    const bKeys = Object.keys(b) as (keyof T)[];
+    if (aKeys.length !== bKeys.length) return false;
+    for (const key of aKeys)
+        if (a[key] !== b[key]) return false;
+    return true;
+}
+
+export function makeKeyedStore<
+    E extends object,
+    K extends Extract<keyof E, string>,
+    Item extends object,
+    Id,
+>(config: KeyedStoreConfig<E, K, Item, Id>): KeyedStore<E, K, Item, Id>
+{
+    const eq = config.eq ?? shallowEqual;
+
+    let allSnapshot: E[K] = config.initial;
+    let idsSnapshot: readonly Id[] = config.getItems(config.initial)
+        .map(config.getKey);
+    let itemsById = new Map<Id, Item>();
+    for (const item of config.getItems(config.initial))
+        itemsById.set(config.getKey(item), item);
+
+    const listeners = new Set<() => void>();
+
+    const apply = (next: E[K]): void =>
+    {
+        allSnapshot = next;
+
+        const nextItems = config.getItems(next);
+
+        const nextItemsById = new Map<Id, Item>();
+        for (const item of nextItems)
+        {
+            const id = config.getKey(item);
+            const prev = itemsById.get(id);
+            nextItemsById.set(id, prev !== undefined && eq(prev, item) ? prev : item);
+        }
+        itemsById = nextItemsById;
+
+        const nextIds = nextItems.map(config.getKey);
+        const idsEqual = nextIds.length === idsSnapshot.length
+            && nextIds.every((id, i) => id === idsSnapshot[i]);
+        if (!idsEqual) idsSnapshot = nextIds;
+
+        for (const listener of listeners) listener();
+    };
+
+    const subscribe = (listener: () => void): (() => void) =>
+    {
+        listeners.add(listener);
+        return () => { listeners.delete(listener); };
+    };
+
+    void config.fetch().then(apply).catch(
+        (err) => console.error('makeKeyedStore: initial fetch failed', err));
+
+    config.backend.on?.(config.event, apply);
+
+    return {
+        useAll: () => useSyncExternalStore(subscribe, () => allSnapshot),
+        useIds: () => useSyncExternalStore(subscribe, () => idsSnapshot),
+        useItem: (id: Id) =>
+            useSyncExternalStore(subscribe, () => itemsById.get(id)),
     };
 }

@@ -17,8 +17,6 @@ struct MyApp
     WebView webView {embeddedOptions("WebApp")};
     WebViewBridge transport {webView};
     Window window;
-    Listener bridgeBinding =
-        bindToBridge(parametersState(), transport.getBridge(), "parameters");
     Threads::Timer timer {[] { advanceTick(); }, 30};
 };
 

@@ -16,8 +16,6 @@ struct MyApp
     WebView webView {embeddedOptions("TodoApp")};
     WebViewBridge transport {webView};
     Window window;
-    Listener bridgeBinding =
-        bindToBridge(todoState(), transport.getBridge(), "todos");
 };
 
 int main()

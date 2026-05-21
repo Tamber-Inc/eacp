@@ -1,5 +1,7 @@
 #include "Types.h"
 
+#include <eacp/WebView/WebView.h>
+
 #include <utility>
 
 namespace
@@ -16,11 +18,7 @@ TodoState makeInitialState()
 }
 } // namespace
 
-eacp::StateValue<TodoState>& todoState()
-{
-    static auto state = eacp::StateValue<TodoState> {makeInitialState()};
-    return state;
-}
+EACP_STATE(TodoState, todoState, todos, makeInitialState())
 
 TodoState getTodos()
 {
@@ -100,5 +98,3 @@ MIRO_EXPORT_COMMANDS(getTodos,
                      editTodo,
                      removeTodo,
                      clearCompleted)
-
-MIRO_EXPORT_EVENT(todos, TodoState)

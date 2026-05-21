@@ -1,7 +1,5 @@
 #pragma once
 
-#include <eacp/Core/Utils/StateValue.h>
-
 #include <Miro/Miro.h>
 
 struct Parameters
@@ -12,8 +10,6 @@ struct Parameters
 
     MIRO_REFLECT(level, autoCycle, counter)
 };
-
-eacp::StateValue<Parameters>& parametersState();
 
 Parameters getParameters();
 void setParameters(const Parameters& req);

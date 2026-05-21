@@ -1,5 +1,7 @@
 #include "Types.h"
 
+#include <eacp/WebView/WebView.h>
+
 #include <algorithm>
 #include <cmath>
 
@@ -8,11 +10,7 @@ namespace
 double cyclePhase = 0.0;
 } // namespace
 
-eacp::StateValue<Parameters>& parametersState()
-{
-    static auto state = eacp::StateValue<Parameters> {};
-    return state;
-}
+EACP_STATE(Parameters, parametersState, parameters, Parameters {})
 
 Parameters getParameters()
 {
@@ -47,5 +45,3 @@ void advanceTick()
 }
 
 MIRO_EXPORT_COMMANDS(getParameters, setParameters)
-
-MIRO_EXPORT_EVENT(parameters, Parameters)

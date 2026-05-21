@@ -5,6 +5,8 @@
 #include <Miro/Miro.h>
 
 #include <ea_data_structures/Pointers/Broadcaster.h>
+#include <ea_data_structures/Pointers/OwningPointer.h>
+#include <ea_data_structures/Structures/Vector.h>
 
 #include <string>
 
@@ -18,6 +20,11 @@ using EmptyMessage = Miro::EmptyValue;
 // registry; this class is responsible only for the WebView wire
 // format (script message handler + injected JS shim + an event
 // broadcaster registered on construction and removed on destruction).
+//
+// On construction the bridge picks up every state hub declared via
+// EACP_STATE in the linked TUs (see StateBridge.h) and broadcasts
+// their changes on the wire automatically. The auto-bind listeners
+// live on `stateListeners` so they unsubscribe when this bridge dies.
 //
 // The Bridge can be shared with other transports (e.g. an
 // HTTP::Rpc::Server) so a single set of typed handlers — including
@@ -41,6 +48,7 @@ private:
     WebView& webView;
     Miro::Bridge bridge;
     EA::Listener emitListener;
+    EA::Vector<EA::OwningPointer<EA::Listener>> stateListeners;
 };
 
 } // namespace eacp::Graphics
