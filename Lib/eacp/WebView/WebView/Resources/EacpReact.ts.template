@@ -17,6 +17,7 @@
 // interfaces satisfy it without declaring an index signature.
 
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { isBackendAvailable } from './backend';
 import type { TransportOn } from './@BASENAME@.bridge';
 
 // `on` is typed as the same `TransportOn<E>` the bridge module exports
@@ -29,6 +30,37 @@ import type { TransportOn } from './@BASENAME@.bridge';
 export interface EventCapableBackend<E extends object = object>
 {
     on?: TransportOn<E>;
+}
+
+// ---------- backend availability ----------
+//
+// React-friendly view of isBackendAvailable() — useful when the
+// component tree wants to show a "running without backend" banner or
+// branch on the bridge presence in a way that survives a late-injected
+// bridge (some dev workflows attach window.eacp asynchronously).
+//
+// Implemented with a low-frequency poll rather than a callback because
+// the WebView host can't push a "ready" signal to JS code that loaded
+// before the bridge was installed. 500 ms is a balance between dev
+// responsiveness and idle CPU cost; it's fine to tune per app by
+// wrapping `isBackendAvailable` in your own hook if the default isn't
+// right.
+export function useBackendAvailable(): boolean
+{
+    const [available, setAvailable] = useState<boolean>(isBackendAvailable);
+
+    useEffect(() =>
+    {
+        const id = setInterval(() =>
+        {
+            const next = isBackendAvailable();
+            setAvailable((prev) => prev === next ? prev : next);
+        }, 500);
+
+        return () => clearInterval(id);
+    }, []);
+
+    return available;
 }
 
 // ---------- low-level hooks ----------
@@ -186,6 +218,13 @@ export interface BridgeStoreConfig<
     event: K;
     fetch: () => Promise<E[K]>;
     initial: E[K];
+
+    // Optional guard: when supplied, the initial fetch is skipped if
+    // this returns false. The hooks codegen wires this to
+    // `isBackendAvailable` so `npm run dev` in a regular browser falls
+    // back silently to `initial` instead of logging a missing-bridge
+    // rejection per hook. Omit (or return true) to always fetch.
+    shouldFetch?: () => boolean;
 }
 
 export function makeBridgeStore<
@@ -210,8 +249,11 @@ export function makeBridgeStore<
 
     const getSnapshot = (): E[K] => snapshot;
 
-    void config.fetch().then(setSnapshot).catch(
-        (err) => console.error('makeBridgeStore: initial fetch failed', err));
+    if (config.shouldFetch?.() ?? true)
+    {
+        void config.fetch().then(setSnapshot).catch(
+            (err) => console.error('makeBridgeStore: initial fetch failed', err));
+    }
 
     config.backend.on?.(config.event, setSnapshot);
 
@@ -265,6 +307,9 @@ export interface KeyedStoreConfig<
     getItems: (state: E[K]) => readonly Item[];
     getKey: (item: Item) => Id;
     eq?: (a: Item, b: Item) => boolean;
+
+    // See BridgeStoreConfig.shouldFetch.
+    shouldFetch?: () => boolean;
 }
 
 export interface KeyedStore<
@@ -337,8 +382,11 @@ export function makeKeyedStore<
         return () => { listeners.delete(listener); };
     };
 
-    void config.fetch().then(apply).catch(
-        (err) => console.error('makeKeyedStore: initial fetch failed', err));
+    if (config.shouldFetch?.() ?? true)
+    {
+        void config.fetch().then(apply).catch(
+            (err) => console.error('makeKeyedStore: initial fetch failed', err));
+    }
 
     config.backend.on?.(config.event, apply);
 

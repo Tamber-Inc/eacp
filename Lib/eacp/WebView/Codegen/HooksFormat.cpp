@@ -167,6 +167,7 @@ std::string formatHooksModule(std::span<TypeNode> typeRoots,
                  << "    backend,\n"
                  << "    event: '" << event.name << "',\n"
                  << "    fetch: backend." << getCmdName << ",\n"
+                 << "    shouldFetch: isBackendAvailable,\n"
                  << "    initial: " << initialJson << ",\n"
                  << "    getItems: (s) => s." << event.collectionField << ",\n"
                  << "    getKey:   (i) => i." << event.keyField << ",\n"
@@ -189,6 +190,7 @@ std::string formatHooksModule(std::span<TypeNode> typeRoots,
                  << "    backend,\n"
                  << "    event: '" << event.name << "',\n"
                  << "    fetch: backend." << getCmdName << ",\n"
+                 << "    shouldFetch: isBackendAvailable,\n"
                  << "    initial: " << initialJson << ",\n"
                  << "});\n";
 
@@ -220,7 +222,10 @@ std::string formatHooksModule(std::span<TypeNode> typeRoots,
         return out.str();
     }
 
-    out << "\nimport { backend } from './backend';\n";
+    out << "\nimport { backend";
+    if (usedBridge || usedKeyed)
+        out << ", isBackendAvailable";
+    out << " } from './backend';\n";
 
     auto helpers = EA::Vector<std::string> {};
     if (usedBridge)

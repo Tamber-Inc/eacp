@@ -5,13 +5,14 @@
 // states get useXxx; push-only events get useXxx via
 // makeNativeEvent. Initial values come from toJSON(T{}).
 
-import { backend } from './backend';
+import { backend, isBackendAvailable } from './backend';
 import { makeKeyedStore } from './react';
 
 const todosStore = makeKeyedStore({
     backend,
     event: 'todos',
     fetch: backend.getTodos,
+    shouldFetch: isBackendAvailable,
     initial: {"items":[]},
     getItems: (s) => s.items,
     getKey:   (i) => i.id,

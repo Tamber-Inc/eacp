@@ -5,12 +5,13 @@
 // states get useXxx; push-only events get useXxx via
 // makeNativeEvent. Initial values come from toJSON(T{}).
 
-import { backend } from './backend';
+import { backend, isBackendAvailable } from './backend';
 import { makeBridgeStore } from './react';
 
 export const useParameters = makeBridgeStore({
     backend,
     event: 'parameters',
     fetch: backend.getParameters,
+    shouldFetch: isBackendAvailable,
     initial: {"autoCycle":false,"counter":0,"level":0.5},
 });
