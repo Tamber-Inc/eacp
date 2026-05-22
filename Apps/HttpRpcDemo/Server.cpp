@@ -1,3 +1,5 @@
+#include "Schema.h"
+
 #include <eacp/Core/Threads/EventLoop.h>
 #include <eacp/Network/HTTPRpc/RpcServer.h>
 #include <eacp/Network/HTTPServer/HttpServer.h>
@@ -12,8 +14,11 @@ int main(int argc, char** argv)
     if (argc > 1)
         port = std::atoi(argv[1]);
 
+    // Lifetime contract: api declared first → destructed last (after
+    // the bridge's listeners and handlers have torn down).
+    auto api = Api::PingApi {};
     auto bridge = Miro::Bridge {};
-    bridge.useStaticRegistry();
+    bridge.use(api);
 
     auto httpServer = eacp::HTTP::Server {};
     auto rpc = eacp::HTTP::Rpc::Server {httpServer, bridge};

@@ -3,7 +3,7 @@
 #include <Miro/Miro.h>
 
 #include <string>
-#include <vector>
+#include <utility>
 
 struct TodoItem
 {
@@ -43,9 +43,120 @@ struct EditTodoRequest
     MIRO_REFLECT(id, text)
 };
 
-TodoState getTodos();
-void addTodo(const AddTodoRequest& req);
-void toggleTodo(const TodoIdRequest& req);
-void editTodo(const EditTodoRequest& req);
-void removeTodo(const TodoIdRequest& req);
-void clearCompleted();
+namespace Api
+{
+
+namespace Detail
+{
+inline std::string trim(const std::string& input)
+{
+    auto start = input.find_first_not_of(" \t\n");
+    if (start == std::string::npos)
+        return {};
+
+    auto end = input.find_last_not_of(" \t\n");
+    return input.substr(start, end - start + 1);
+}
+} // namespace Detail
+
+// Replaces (TodoStore singleton + EACP_KEYED_STATE + the six free-fn
+// commands + MIRO_EXPORT_COMMANDS). reflect() lists the surface; each
+// method mutates the state and publishes a new snapshot.
+//
+// All method bodies are inline because the codegen executable ODR-uses
+// these pmfs through the makePmfHandler lambda chain.
+class TodosApi
+{
+public:
+    TodosApi()
+    {
+        auto seed = TodoState {};
+        seed.items.create(nextId++, "Try editing me (double-click)", false);
+        seed.items.create(nextId++, "Toggle a checkbox", false);
+        seed.items.create(nextId++, "Add a new todo above", true);
+        todos.publish(std::move(seed));
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    void reflect(Miro::ApiReflector& r)
+    {
+        r.command(&TodosApi::getTodos, "getTodos");
+        r.command(&TodosApi::addTodo, "addTodo");
+        r.command(&TodosApi::toggleTodo, "toggleTodo");
+        r.command(&TodosApi::editTodo, "editTodo");
+        r.command(&TodosApi::removeTodo, "removeTodo");
+        r.command(&TodosApi::clearCompleted, "clearCompleted");
+
+        // keyedEvent matches the old EACP_KEYED_STATE: tells the hooks
+        // codegen that this state's payload is a collection (items)
+        // indexed by id, so useTodos / useTodoIds / useTodoItem get
+        // emitted with per-id selector semantics.
+        r.keyedEvent(&TodosApi::todos, "todos", "items", "id");
+    }
+
+    TodoState getTodos() const { return todos.snapshot(); }
+
+    void addTodo(const AddTodoRequest& req)
+    {
+        auto trimmed = Detail::trim(req.text);
+        if (trimmed.empty())
+            return;
+
+        auto next = todos.snapshot();
+        next.items.create(nextId++, std::move(trimmed), false);
+        todos.publish(std::move(next));
+    }
+
+    void toggleTodo(const TodoIdRequest& req)
+    {
+        auto next = todos.snapshot();
+        for (auto& item: next.items)
+        {
+            if (item.id == req.id)
+            {
+                item.completed = ! item.completed;
+                todos.publish(std::move(next));
+                return;
+            }
+        }
+    }
+
+    void editTodo(const EditTodoRequest& req)
+    {
+        auto next = todos.snapshot();
+        for (auto& item: next.items)
+        {
+            if (item.id == req.id)
+            {
+                item.text = req.text;
+                todos.publish(std::move(next));
+                return;
+            }
+        }
+    }
+
+    void removeTodo(const TodoIdRequest& req)
+    {
+        auto next = todos.snapshot();
+        auto erased = next.items.eraseIf(
+            [&](const TodoItem& item) { return item.id == req.id; });
+        if (erased)
+            todos.publish(std::move(next));
+    }
+
+    void clearCompleted()
+    {
+        auto next = todos.snapshot();
+        auto erased = next.items.eraseIf(
+            [](const TodoItem& item) { return item.completed; });
+        if (erased)
+            todos.publish(std::move(next));
+    }
+
+    Miro::Event<TodoState> todos;
+
+private:
+    long long nextId = 1;
+};
+
+} // namespace Api

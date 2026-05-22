@@ -9,10 +9,15 @@ struct MyApp
 {
     MyApp()
     {
+        transport.getBridge().use(todos);
+
         setApplicationMenuBar(buildDefaultWebViewMenuBar());
         window.setContentView(webView);
     }
 
+    // todos declared first → destructed last (after the transport's
+    // bridge listeners and handlers have torn down).
+    Api::TodosApi todos;
     WebView webView {embeddedOptions("TodoApp")};
     WebViewBridge transport {webView};
     Window window;
@@ -21,6 +26,5 @@ struct MyApp
 int main()
 {
     eacp::Apps::run<MyApp>();
-
     return 0;
 }

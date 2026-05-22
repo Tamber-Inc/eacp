@@ -37,11 +37,21 @@
 function(eacp_add_webview_app TARGET)
     set(options REACT)
     set(oneValueArgs WEB_DIR BUNDLE_ID BUNDLE_NAME NAMESPACE CATEGORY SCHEMA_NAME PACKAGE_MANAGER)
-    set(multiValueArgs SOURCES COMMAND_SOURCES SCHEMA_FORMATS)
+    set(multiValueArgs SOURCES COMMAND_SOURCES SCHEMA_FORMATS API API_HEADER)
     cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     if (NOT ARG_SOURCES)
         message(FATAL_ERROR "eacp_add_webview_app(${TARGET}): SOURCES is required")
+    endif ()
+    if (ARG_COMMAND_SOURCES AND ARG_API)
+        message(FATAL_ERROR
+                "eacp_add_webview_app(${TARGET}): COMMAND_SOURCES and API "
+                "are mutually exclusive")
+    endif ()
+    if (ARG_API AND NOT ARG_API_HEADER)
+        message(FATAL_ERROR
+                "eacp_add_webview_app(${TARGET}): API_HEADER is required "
+                "when API is set")
     endif ()
     if (NOT ARG_WEB_DIR)
         message(FATAL_ERROR "eacp_add_webview_app(${TARGET}): WEB_DIR is required")
@@ -74,15 +84,26 @@ function(eacp_add_webview_app TARGET)
     add_executable(${TARGET} ${ARG_SOURCES})
     target_link_libraries(${TARGET} PRIVATE eacp-webview eacp-network-rpc)
 
-    if (ARG_COMMAND_SOURCES)
+    if (ARG_COMMAND_SOURCES OR ARG_API)
+        # Two schema modes, picked by which arg the caller supplied.
         # SOURCES paths in miro_export are resolved against
         # CMAKE_CURRENT_SOURCE_DIR at *call* site, which inside this
-        # function is the caller's directory — so bare filenames work.
-        miro_export(${TARGET}Schema
-                SOURCES ${ARG_COMMAND_SOURCES}
-                OUTPUT_DIR ${TS_GENERATED_DIR}
-                OUTPUT_NAME ${ARG_SCHEMA_NAME}
-                FORMATS ${ARG_SCHEMA_FORMATS})
+        # function is the caller's directory — so bare filenames work
+        # for either mode.
+        if (ARG_API)
+            miro_export(${TARGET}Schema
+                    API ${ARG_API}
+                    API_HEADER ${ARG_API_HEADER}
+                    OUTPUT_DIR ${TS_GENERATED_DIR}
+                    OUTPUT_NAME ${ARG_SCHEMA_NAME}
+                    FORMATS ${ARG_SCHEMA_FORMATS})
+        else ()
+            miro_export(${TARGET}Schema
+                    SOURCES ${ARG_COMMAND_SOURCES}
+                    OUTPUT_DIR ${TS_GENERATED_DIR}
+                    OUTPUT_NAME ${ARG_SCHEMA_NAME}
+                    FORMATS ${ARG_SCHEMA_FORMATS})
+        endif ()
 
         # Always also emit the C++ artifacts so any sibling target can
         # consume them via eacp_target_uses_schema without having to
@@ -96,18 +117,21 @@ function(eacp_add_webview_app TARGET)
                 OUTPUT_DIR ${TS_GENERATED_DIR}
                 BASENAME ${ARG_SCHEMA_NAME})
 
-        eacp_target_uses_schema(${TARGET} ${TARGET}Schema HANDLERS)
+        # SOURCES mode needs HANDLERS splicing (so MIRO_EXPORT_COMMAND
+        # static initializers fire in the runtime executable). API mode
+        # binds at runtime via bridge.use(api), so it only needs the
+        # generated headers — plain link, no source splicing.
+        if (ARG_COMMAND_SOURCES)
+            eacp_target_uses_schema(${TARGET} ${TARGET}Schema HANDLERS)
+        else ()
+            eacp_target_uses_schema(${TARGET} ${TARGET}Schema)
+        endif ()
 
-        # Command sources may reach into eacp-core types. The codegen
-        # tool never *calls* runtime code, but it has to compile and
-        # link the same TU, so pull in eacp-core's include path and
-        # static lib.
-        #
-        # eacp-webview-codegen carries the events / hooks formatter
-        # registrations. Splicing its objects in directly (rather than
-        # just linking) keeps the static-init constructors alive
-        # through the linker — same pattern Miro uses for
-        # MiroTypeExportMain.
+        # Schema codegen needs eacp's events / hooks formatter
+        # registrations to be alive. Splicing the eacp-webview-codegen
+        # OBJECT lib directly into the codegen executable keeps the
+        # static-init constructors from being dropped by the linker.
+        # Same pattern Miro uses for MiroTypeExportMain.
         if (TARGET ${TARGET}Schema_Codegen)
             target_link_libraries(${TARGET}Schema_Codegen PRIVATE eacp-core)
             if (TARGET eacp-webview-codegen)
