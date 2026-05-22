@@ -16,34 +16,43 @@
 namespace
 {
 
-using Miro::TypeExport::EntryList;
+using Miro::TypeExport::Context;
 using Miro::TypeExport::Format;
 using Miro::TypeExport::registerFormat;
+
+// Source-agnostic event view: prefer ctx.events (the inversion path's
+// DescribeReflector walk filled it) and fall back to the static-init
+// global eventRegistry when ctx.events is empty (Miro Main.cpp doesn't
+// know about events, so it leaves them empty for downstream resolvers).
+// EventEntry is a Miro::EventInfo alias, so both sides feed the same
+// formatter signature.
+std::span<const eacp::Graphics::EventEntry> eventsFor(
+    const Miro::TypeExport::Context& ctx)
+{
+    if (! ctx.events.empty())
+        return ctx.events;
+
+    auto& global = eacp::Graphics::Detail::eventRegistry();
+    return {global.data(), static_cast<std::size_t>(global.size())};
+}
 
 [[maybe_unused]] const auto eventsFormat = registerFormat(Format {
     "events",
     ".events.ts",
-    [](const EntryList& entries, std::string_view baseName)
+    [](const Context& ctx)
     {
-        auto trees = Miro::TypeExport::buildAllTypeTrees(entries);
         return eacp::Graphics::Codegen::formatEventsModule(
-            std::span<Miro::TypeTree::TypeNode> {trees},
-            eacp::Graphics::Detail::eventRegistry(),
-            baseName);
+            ctx.typeRoots, eventsFor(ctx), ctx.baseName);
     },
 });
 
 [[maybe_unused]] const auto hooksFormat = registerFormat(Format {
     "hooks",
     ".hooks.ts",
-    [](const EntryList& entries, std::string_view baseName)
+    [](const Context& ctx)
     {
-        auto trees = Miro::TypeExport::buildAllTypeTrees(entries);
         return eacp::Graphics::Codegen::formatHooksModule(
-            std::span<Miro::TypeTree::TypeNode> {trees},
-            Miro::CommandExport::Detail::registry(),
-            eacp::Graphics::Detail::eventRegistry(),
-            baseName);
+            ctx.typeRoots, ctx.commands, eventsFor(ctx), ctx.baseName);
     },
 });
 

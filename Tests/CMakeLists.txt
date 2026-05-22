@@ -7,3 +7,4 @@ if (APPLE)
 endif ()
 
 add_subdirectory(Network)
+add_subdirectory(Codegen)

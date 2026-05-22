@@ -27,17 +27,10 @@
 namespace eacp::Graphics
 {
 
-struct EventEntry
-{
-    std::string name;                 // wire name, e.g. "todos"
-    std::string payloadTypeName;      // C++ short name, e.g. "TodoState"
-    std::string payloadQualifiedName; // fully-qualified C++ name
-    std::function<Miro::JSON()> defaultPayloadJson;
-
-    bool isKeyed = false;
-    std::string collectionField;
-    std::string keyField;
-};
+// Aliases Miro's framework-neutral EventInfo so the static-init path
+// and the inversion-driven Context::events can use the same struct
+// without translation. Same field set the format functors expect.
+using EventEntry = Miro::TypeExport::EventInfo;
 
 namespace Detail
 {
