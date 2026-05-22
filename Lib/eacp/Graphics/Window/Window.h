@@ -58,6 +58,9 @@ struct WindowOptions
     int height = 400;
     std::string title = "New Window";
 
+    // When false, the title bar still shows but the title text is hidden.
+    bool showTitle = true;
+
     EA::Vector<WindowFlags> flags;
 
     Callback effectiveOnQuit() const

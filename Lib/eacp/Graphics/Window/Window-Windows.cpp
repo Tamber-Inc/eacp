@@ -153,7 +153,8 @@ struct Window::Native
             style = WS_POPUP;
         }
 
-        std::wstring wideTitle = toWideString(options.title);
+        std::wstring wideTitle = options.showTitle ? toWideString(options.title)
+                                                   : std::wstring {};
 
         auto dpi = GetDpiForSystem();
         auto dpiScale = static_cast<float>(dpi) / 96.f;

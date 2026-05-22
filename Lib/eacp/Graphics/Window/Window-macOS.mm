@@ -114,6 +114,8 @@ struct Window::Native
         [getWindow() setRestorable:NO];
         [getWindow() setReleasedWhenClosed:NO];
         [getWindow() setTitle:@(options.title.c_str())];
+        [getWindow() setTitleVisibility:options.showTitle ? NSWindowTitleVisible
+                                                          : NSWindowTitleHidden];
         [getWindow() center];
         [getWindow() makeKeyAndOrderFront:nil];
         [getWindow() setDelegate:delegate.get()];
