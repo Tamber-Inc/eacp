@@ -63,9 +63,13 @@ if (APPLE)
             "-framework WebKit")
 
     if (IOS)
+        target_sources(eacp-webview PRIVATE
+                WebView/Snapshot-iOS.mm)
         target_link_libraries(eacp-webview PRIVATE
                 "-framework UIKit")
     else ()
+        target_sources(eacp-webview PRIVATE
+                WebView/Snapshot-macOS.mm)
         target_link_libraries(eacp-webview PRIVATE
                 "-framework AppKit")
     endif ()

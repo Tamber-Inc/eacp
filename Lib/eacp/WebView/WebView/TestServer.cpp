@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -21,6 +22,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace eacp::Graphics::Test
 {
@@ -34,7 +36,7 @@ namespace
 std::string loadTestAgentSource()
 {
     auto view = ResEmbed::get("test-agent.js", "EacpTestServer");
-    if (! view)
+    if (!view)
         throw std::runtime_error(
             "test server: embedded test-agent.js resource not found");
     return view.toString();
@@ -49,14 +51,30 @@ std::string jsStringLiteral(std::string_view value)
     {
         switch (c)
         {
-            case '\\': out += "\\\\"; break;
-            case '"': out += "\\\""; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            case '<': out += "\\u003c"; break;
-            case '>': out += "\\u003e"; break;
-            case '&': out += "\\u0026"; break;
+            case '\\':
+                out += "\\\\";
+                break;
+            case '"':
+                out += "\\\"";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            case '<':
+                out += "\\u003c";
+                break;
+            case '>':
+                out += "\\u003e";
+                break;
+            case '&':
+                out += "\\u0026";
+                break;
             default:
                 if (static_cast<unsigned char>(c) < 0x20)
                 {
@@ -78,7 +96,7 @@ std::string jsStringLiteral(std::string_view value)
 
 const Miro::JSON& field(const Miro::JSON& payload, const std::string& key)
 {
-    if (! payload.isObject())
+    if (!payload.isObject())
         throw std::runtime_error("payload must be a JSON object");
 
     auto& obj = payload.asObject();
@@ -94,7 +112,7 @@ std::string requiredString(const Miro::JSON& payload, const std::string& key)
 {
     auto& value = field(payload, key);
 
-    if (! value.isString())
+    if (!value.isString())
         throw std::runtime_error("field '" + key + "' must be a string");
 
     return value.asString();
@@ -102,13 +120,13 @@ std::string requiredString(const Miro::JSON& payload, const std::string& key)
 
 int optionalInt(const Miro::JSON& payload, const std::string& key, int fallback)
 {
-    if (! payload.isObject())
+    if (!payload.isObject())
         return fallback;
 
     auto& obj = payload.asObject();
     auto it = obj.find(key);
 
-    if (it == obj.end() || ! it->second.isNumber())
+    if (it == obj.end() || !it->second.isNumber())
         return fallback;
 
     return static_cast<int>(it->second.asNumber());
@@ -116,16 +134,57 @@ int optionalInt(const Miro::JSON& payload, const std::string& key, int fallback)
 
 std::string optionalString(const Miro::JSON& payload, const std::string& key)
 {
-    if (! payload.isObject())
+    if (!payload.isObject())
         return {};
 
     auto& obj = payload.asObject();
     auto it = obj.find(key);
 
-    if (it == obj.end() || ! it->second.isString())
+    if (it == obj.end() || !it->second.isString())
         return {};
 
     return it->second.asString();
+}
+
+std::string base64Encode(const std::vector<std::uint8_t>& data)
+{
+    static constexpr char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    auto out = std::string {};
+    out.reserve(((data.size() + 2) / 3) * 4);
+
+    auto i = std::size_t {0};
+    for (; i + 3 <= data.size(); i += 3)
+    {
+        auto b0 = data[i];
+        auto b1 = data[i + 1];
+        auto b2 = data[i + 2];
+        out += alphabet[b0 >> 2];
+        out += alphabet[((b0 & 0x03) << 4) | (b1 >> 4)];
+        out += alphabet[((b1 & 0x0f) << 2) | (b2 >> 6)];
+        out += alphabet[b2 & 0x3f];
+    }
+
+    if (i < data.size())
+    {
+        auto b0 = data[i];
+        out += alphabet[b0 >> 2];
+        if (i + 1 < data.size())
+        {
+            auto b1 = data[i + 1];
+            out += alphabet[((b0 & 0x03) << 4) | (b1 >> 4)];
+            out += alphabet[(b1 & 0x0f) << 2];
+            out += '=';
+        }
+        else
+        {
+            out += alphabet[(b0 & 0x03) << 4];
+            out += "==";
+        }
+    }
+
+    return out;
 }
 
 // Wraps an arbitrary JS expression so the callback always gets a
@@ -156,7 +215,7 @@ constexpr long defaultRpcPort = 8765;
 long readPortEnv()
 {
     auto* env = std::getenv("EACP_RPC_PORT");
-    if (! env)
+    if (!env)
         return defaultRpcPort;
 
     char* end = nullptr;
@@ -208,11 +267,10 @@ public:
         eacp::Threads::callAsync(
             [this, requestedPort]
             {
-                if (! httpServer.listen(static_cast<int>(requestedPort)))
+                if (!httpServer.listen(static_cast<int>(requestedPort)))
                     throw std::runtime_error("test server: HTTP listen failed");
 
-                std::cout << "EACP_RPC_PORT=" << httpServer.boundPort()
-                          << std::endl;
+                std::cout << "EACP_RPC_PORT=" << httpServer.boundPort() << std::endl;
                 std::cout.flush();
             });
     }
@@ -228,14 +286,14 @@ private:
         previousFinishedHandler = webView.onNavigationFinished;
         webView.onNavigationFinished =
             [this, previous = previousFinishedHandler](const std::string& url)
-            {
-                if (previous)
-                    previous(url);
+        {
+            if (previous)
+                previous(url);
 
-                auto lock = std::lock_guard {readyMutex};
-                navigationFinished = true;
-                readyCv.notify_all();
-            };
+            auto lock = std::lock_guard {readyMutex};
+            navigationFinished = true;
+            readyCv.notify_all();
+        };
     }
 
     void waitForFirstNavigation(int timeoutMs)
@@ -244,10 +302,54 @@ private:
         auto ready = readyCv.wait_for(lock,
                                       std::chrono::milliseconds {timeoutMs},
                                       [&] { return navigationFinished; });
-        if (! ready)
+        if (!ready)
             throw std::runtime_error("test server: page did not finish "
                                      "loading within "
                                      + std::to_string(timeoutMs) + "ms");
+    }
+
+    struct AsyncSnapshotState
+    {
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool done = false;
+        std::vector<std::uint8_t> bytes;
+        std::string error;
+    };
+
+    std::vector<std::uint8_t> runSnapshot(int timeoutMs)
+    {
+        waitForFirstNavigation(timeoutMs);
+
+        auto state = std::make_shared<AsyncSnapshotState>();
+
+        eacp::Threads::callAsync(
+            [this, state]
+            {
+                webView.takeSnapshot(
+                    [state](std::vector<std::uint8_t> bytes,
+                            const std::string& error)
+                    {
+                        auto lock = std::lock_guard {state->mutex};
+                        state->bytes = std::move(bytes);
+                        state->error = error;
+                        state->done = true;
+                        state->cv.notify_one();
+                    });
+            });
+
+        auto lock = std::unique_lock {state->mutex};
+        auto ready = state->cv.wait_for(lock,
+                                        std::chrono::milliseconds {timeoutMs},
+                                        [&] { return state->done; });
+
+        if (!ready)
+            throw std::runtime_error("screenshot timed out after "
+                                     + std::to_string(timeoutMs) + "ms");
+        if (!state->error.empty())
+            throw std::runtime_error(state->error);
+
+        return std::move(state->bytes);
     }
 
     Miro::JSON runJs(const std::string& script, int timeoutMs)
@@ -279,10 +381,10 @@ private:
                                         std::chrono::milliseconds {timeoutMs},
                                         [&] { return state->done; });
 
-        if (! ready)
+        if (!ready)
             throw std::runtime_error("test command timed out after "
                                      + std::to_string(timeoutMs) + "ms");
-        if (! state->error.empty())
+        if (!state->error.empty())
             throw std::runtime_error(state->error);
 
         if (state->result.empty())
@@ -299,7 +401,7 @@ private:
                                      + e.what() + " (raw: " + state->result + ")");
         }
 
-        if (! parsed.isObject())
+        if (!parsed.isObject())
             return parsed;
 
         auto& obj = parsed.asObject();
@@ -318,15 +420,17 @@ private:
 
         table.on("test.click",
                  [this, sel, timeout](const Miro::JSON& p) -> Miro::JSON
-                 { return runJs(wrapExpr("window.__test.click(" + sel(p) + ")"),
-                                timeout(p)); });
+                 {
+                     return runJs(wrapExpr("window.__test.click(" + sel(p) + ")"),
+                                  timeout(p));
+                 });
 
         table.on("test.fill",
                  [this, sel, timeout](const Miro::JSON& p) -> Miro::JSON
                  {
                      auto value = jsStringLiteral(requiredString(p, "value"));
-                     return runJs(wrapExpr("window.__test.fill("
-                                           + sel(p) + "," + value + ")"),
+                     return runJs(wrapExpr("window.__test.fill(" + sel(p) + ","
+                                           + value + ")"),
                                   timeout(p));
                  });
 
@@ -334,47 +438,64 @@ private:
                  [this, sel, timeout](const Miro::JSON& p) -> Miro::JSON
                  {
                      auto key = jsStringLiteral(requiredString(p, "key"));
-                     return runJs(wrapExpr("window.__test.press("
-                                           + sel(p) + "," + key + ")"),
-                                  timeout(p));
+                     return runJs(
+                         wrapExpr("window.__test.press(" + sel(p) + "," + key + ")"),
+                         timeout(p));
                  });
 
         table.on("test.submit",
                  [this, sel, timeout](const Miro::JSON& p) -> Miro::JSON
-                 { return runJs(wrapExpr("window.__test.submit(" + sel(p) + ")"),
-                                timeout(p)); });
+                 {
+                     return runJs(wrapExpr("window.__test.submit(" + sel(p) + ")"),
+                                  timeout(p));
+                 });
 
         table.on("test.text",
                  [this, sel, timeout](const Miro::JSON& p) -> Miro::JSON
-                 { return runJs(wrapExpr("window.__test.text(" + sel(p) + ")"),
-                                timeout(p)); });
+                 {
+                     return runJs(wrapExpr("window.__test.text(" + sel(p) + ")"),
+                                  timeout(p));
+                 });
 
         table.on("test.attr",
                  [this, sel, timeout](const Miro::JSON& p) -> Miro::JSON
                  {
                      auto name = jsStringLiteral(requiredString(p, "name"));
-                     return runJs(wrapExpr("window.__test.attr("
-                                           + sel(p) + "," + name + ")"),
-                                  timeout(p));
+                     return runJs(
+                         wrapExpr("window.__test.attr(" + sel(p) + "," + name + ")"),
+                         timeout(p));
                  });
 
         table.on("test.exists",
                  [this, sel, timeout](const Miro::JSON& p) -> Miro::JSON
-                 { return runJs(wrapExpr("window.__test.exists(" + sel(p) + ")"),
-                                timeout(p)); });
+                 {
+                     return runJs(wrapExpr("window.__test.exists(" + sel(p) + ")"),
+                                  timeout(p));
+                 });
 
         table.on("test.count",
                  [this, sel, timeout](const Miro::JSON& p) -> Miro::JSON
-                 { return runJs(wrapExpr("window.__test.count(" + sel(p) + ")"),
-                                timeout(p)); });
+                 {
+                     return runJs(wrapExpr("window.__test.count(" + sel(p) + ")"),
+                                  timeout(p));
+                 });
+
+        table.on("test.screenshot",
+                 [this, timeout](const Miro::JSON& p) -> Miro::JSON
+                 {
+                     auto bytes = runSnapshot(timeout(p));
+                     auto result = Miro::JSON {Miro::Json::Object {}};
+                     result.asObject()["pngBase64"] =
+                         Miro::JSON {base64Encode(bytes)};
+                     return result;
+                 });
 
         table.on("test.dom",
                  [this, timeout](const Miro::JSON& p) -> Miro::JSON
                  {
                      // Empty selector → whole document. The JS-side
                      // __test.dom handles the null/empty branch.
-                     auto selector =
-                         jsStringLiteral(optionalString(p, "selector"));
+                     auto selector = jsStringLiteral(optionalString(p, "selector"));
                      return runJs(wrapExpr("window.__test.dom(" + selector + ")"),
                                   timeout(p));
                  });
@@ -383,8 +504,7 @@ private:
                  [this, timeout](const Miro::JSON& p) -> Miro::JSON
                  {
                      auto expr = jsStringLiteral(requiredString(p, "expression"));
-                     return runJs(wrapExpr("window.__test.evaluate("
-                                           + expr + ")"),
+                     return runJs(wrapExpr("window.__test.evaluate(" + expr + ")"),
                                   timeout(p));
                  });
 
@@ -417,7 +537,8 @@ private:
                              return Miro::JSON {true};
                          if (std::chrono::steady_clock::now() >= deadline)
                              throw std::runtime_error("waitFor timed out for "
-                                                      "selector: " + selector);
+                                                      "selector: "
+                                                      + selector);
                          std::this_thread::sleep_for(
                              std::chrono::milliseconds {waitForPollMs});
                      }
@@ -435,10 +556,9 @@ private:
     std::function<void(const std::string&)> previousFinishedHandler;
 };
 
-std::shared_ptr<TestServer> installIfEnabled(WebView& webView,
-                                             Miro::Bridge& bridge)
+std::shared_ptr<TestServer> installIfEnabled(WebView& webView, Miro::Bridge& bridge)
 {
-    if (! shouldEnableTestServer())
+    if (!shouldEnableTestServer())
         return nullptr;
 
     return std::make_shared<TestServer>(webView, bridge);

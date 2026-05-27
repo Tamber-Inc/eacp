@@ -83,6 +83,7 @@ async function attach(rpcUrl: string,
 {
     const driver = new AppDriver(rpcUrl, {
         defaultTimeoutMs: options.defaultTimeoutMs,
+        snapshotDir: options.snapshotDir,
     });
 
     // Health probe — confirms the app is reachable up front so the
@@ -149,6 +150,7 @@ async function spawnAndLaunch(options: LaunchOptions): Promise<LaunchedApp>
 
         const driver = new AppDriver(rpcUrl, {
             defaultTimeoutMs: options.defaultTimeoutMs,
+            snapshotDir: options.snapshotDir,
         });
 
         // Health probe — the port line means listen() returned, but the

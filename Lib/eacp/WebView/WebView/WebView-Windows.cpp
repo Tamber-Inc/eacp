@@ -583,6 +583,77 @@ void WebView::evaluateJavaScript(const std::string& script, JSCallback callback)
             .Get());
 }
 
+void WebView::takeSnapshot(SnapshotCallback callback)
+{
+    if (!callback)
+        return;
+
+    impl->ensureInitialized();
+    impl->queueOperation(
+        [this, callback]() mutable
+        {
+            if (!impl->webView)
+            {
+                Threads::callAsync([callback]
+                                   { callback({}, "WebView not initialized"); });
+                return;
+            }
+
+            ComPtr<IStream> stream;
+            auto hr = CreateStreamOnHGlobal(nullptr, TRUE, &stream);
+            if (FAILED(hr) || !stream)
+            {
+                Threads::callAsync(
+                    [callback] { callback({}, "CreateStreamOnHGlobal failed"); });
+                return;
+            }
+
+            impl->webView->CapturePreview(
+                COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
+                stream.Get(),
+                Microsoft::WRL::Callback<
+                    ICoreWebView2CapturePreviewCompletedHandler>(
+                    [callback, stream](HRESULT errorCode) -> HRESULT
+                    {
+                        std::vector<std::uint8_t> bytes;
+                        std::string error;
+
+                        if (FAILED(errorCode))
+                        {
+                            error = "CapturePreview failed";
+                        }
+                        else
+                        {
+                            // Stream is at end-of-write — rewind and
+                            // read the full buffer back into bytes.
+                            LARGE_INTEGER zero = {};
+                            stream->Seek(zero, STREAM_SEEK_SET, nullptr);
+
+                            STATSTG stat = {};
+                            if (SUCCEEDED(stream->Stat(&stat, STATFLAG_NONAME)))
+                            {
+                                bytes.resize(stat.cbSize.LowPart);
+                                ULONG read = 0;
+                                stream->Read(bytes.data(),
+                                             static_cast<ULONG>(bytes.size()),
+                                             &read);
+                                bytes.resize(read);
+                            }
+                            else
+                            {
+                                error = "IStream::Stat failed";
+                            }
+                        }
+
+                        Threads::callAsync(
+                            [callback, bytes = std::move(bytes), error]() mutable
+                            { callback(std::move(bytes), error); });
+                        return S_OK;
+                    })
+                    .Get());
+        });
+}
+
 void WebView::addScriptMessageHandler(
     const std::string& name, std::function<void(const std::string& message)> handler)
 {

@@ -5,6 +5,7 @@
 #else
 #import <AppKit/AppKit.h>
 #endif
+#include "Snapshot-Apple.h"
 #include "WebView.h"
 
 #include <eacp/Core/ObjC/Strings.h>
@@ -640,6 +641,14 @@ void WebView::evaluateJavaScript(const std::string& script, JSCallback callback)
            eacp::Threads::callAsync([callback, resultStr, errorStr]()
                                     { callback(resultStr, errorStr); });
          }];
+}
+
+void WebView::takeSnapshot(SnapshotCallback callback)
+{
+    if (callback == nullptr)
+        return;
+
+    detail::takeAppleSnapshot(impl->webView.get(), std::move(callback));
 }
 
 void WebView::addScriptMessageHandler(

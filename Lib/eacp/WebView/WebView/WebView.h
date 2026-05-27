@@ -12,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace eacp::Graphics
 {
@@ -83,6 +84,10 @@ public:
         std::function<void(const std::string& result, const std::string& error)>;
     void evaluateJavaScript(const std::string& script,
                             JSCallback callback = nullptr);
+
+    using SnapshotCallback = std::function<void(std::vector<std::uint8_t> pngBytes,
+                                                const std::string& error)>;
+    void takeSnapshot(SnapshotCallback callback);
 
     void zoomIn();
     void zoomOut();
