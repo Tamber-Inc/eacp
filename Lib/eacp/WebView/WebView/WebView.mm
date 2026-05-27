@@ -1,12 +1,8 @@
 #import <WebKit/WebKit.h>
 #import <Foundation/Foundation.h>
-#if TARGET_OS_IPHONE
-#import <UIKit/UIKit.h>
-#else
-#import <AppKit/AppKit.h>
-#endif
 #include "Snapshot-Apple.h"
 #include "WebView.h"
+#include "WebViewPlatform-Apple.h"
 
 #include <eacp/Core/ObjC/Strings.h>
 #include <eacp/Graphics/Primitives/GraphicUtils.h>
@@ -156,14 +152,7 @@ struct WebView::Native
         auto* parentHandle = owner.getHandle();
 
         if (parentHandle != nullptr)
-        {
-#if TARGET_OS_IPHONE
-            auto* parentView = (__bridge UIView*) parentHandle;
-#else
-            auto* parentView = (__bridge NSView*) parentHandle;
-#endif
-            [parentView addSubview:webView.get()];
-        }
+            detail::attachWKWebViewToParent(webView.get(), parentHandle);
     }
     void updateFrame()
     {
@@ -192,7 +181,7 @@ struct WebViewNativeAccess
 
     static WKWebView* wkWebViewOf(WebView& popup)
     {
-        return popup.impl->webView.get();
+        return popup.impl != nullptr ? popup.impl->webView.get() : nil;
     }
 };
 
@@ -407,7 +396,7 @@ struct WebViewNativeAccess
 
 namespace eacp::Graphics
 {
-namespace
+namespace detail
 {
 EA::Vector<WebView*>& registeredWebViews()
 {
@@ -415,14 +404,22 @@ EA::Vector<WebView*>& registeredWebViews()
     return instances;
 }
 
+WKWebView* wkWebViewOf(WebView* view)
+{
+    return view != nullptr ? WebViewNativeAccess::wkWebViewOf(*view) : nil;
+}
+} // namespace detail
+
+namespace
+{
 void registerWebView(WebView* view)
 {
-    registeredWebViews().add(view);
+    detail::registeredWebViews().add(view);
 }
 
 void unregisterWebView(WebView* view)
 {
-    registeredWebViews().removeAllMatches(view);
+    detail::registeredWebViews().removeAllMatches(view);
 }
 } // namespace
 
@@ -547,49 +544,17 @@ void WebView::resetZoom()
 void WebView::setZoom(double level)
 {
     auto clamped = std::clamp(level, minZoomLevel, maxZoomLevel);
-#if TARGET_OS_IPHONE
-    impl->zoomLevel = clamped;
-    auto script = "document.documentElement.style.zoom = '"
-        + std::to_string(clamped) + "';";
-    [impl->webView.get() evaluateJavaScript:Strings::toNSString(script)
-                          completionHandler:nil];
-#else
-    impl->webView.get().pageZoom = clamped;
-#endif
+    detail::applyNativeZoom(impl->webView.get(), clamped, impl->zoomLevel);
 }
 
 double WebView::getZoom() const
 {
-#if TARGET_OS_IPHONE
-    return impl->zoomLevel;
-#else
-    return impl->webView.get().pageZoom;
-#endif
+    return detail::readNativeZoom(impl->webView.get(), impl->zoomLevel);
 }
 
 WebView* WebView::focused()
 {
-#if TARGET_OS_IPHONE
-    return registeredWebViews().empty() ? nullptr : registeredWebViews().back();
-#else
-    auto* keyWindow = [NSApp keyWindow];
-
-    if (keyWindow == nil)
-        return nullptr;
-
-    for (auto* view: registeredWebViews())
-    {
-        if (view->impl == nullptr)
-            continue;
-
-        auto* wkWebView = view->impl->webView.get();
-
-        if (wkWebView != nil && wkWebView.window == keyWindow)
-            return view;
-    }
-
-    return nullptr;
-#endif
+    return detail::findFocusedWebView();
 }
 
 void WebView::evaluateJavaScript(const std::string& script, JSCallback callback)
