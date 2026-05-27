@@ -114,6 +114,20 @@ int optionalInt(const Miro::JSON& payload, const std::string& key, int fallback)
     return static_cast<int>(it->second.asNumber());
 }
 
+std::string optionalString(const Miro::JSON& payload, const std::string& key)
+{
+    if (! payload.isObject())
+        return {};
+
+    auto& obj = payload.asObject();
+    auto it = obj.find(key);
+
+    if (it == obj.end() || ! it->second.isString())
+        return {};
+
+    return it->second.asString();
+}
+
 // Wraps an arbitrary JS expression so the callback always gets a
 // JSON-encoded {value: ...}. JSON.stringify of undefined returns
 // undefined (not a string), which evaluateJavaScript would surface
@@ -353,6 +367,17 @@ private:
                  [this, sel, timeout](const Miro::JSON& p) -> Miro::JSON
                  { return runJs(wrapExpr("window.__test.count(" + sel(p) + ")"),
                                 timeout(p)); });
+
+        table.on("test.dom",
+                 [this, timeout](const Miro::JSON& p) -> Miro::JSON
+                 {
+                     // Empty selector → whole document. The JS-side
+                     // __test.dom handles the null/empty branch.
+                     auto selector =
+                         jsStringLiteral(optionalString(p, "selector"));
+                     return runJs(wrapExpr("window.__test.dom(" + selector + ")"),
+                                  timeout(p));
+                 });
 
         table.on("test.evaluate",
                  [this, timeout](const Miro::JSON& p) -> Miro::JSON

@@ -77,6 +77,13 @@
     },
     evaluate: function(expr) {
       return Function('"use strict"; return (' + expr + ');')();
+    },
+    dom: function(sel) {
+      // No selector → whole document. Avoids forcing tests to know
+      // about <html> vs document.body; outerHTML on documentElement
+      // serialises the full tree including the root tag.
+      if (sel == null || sel === '') return document.documentElement.outerHTML;
+      return $(sel).outerHTML;
     }
   };
 })();

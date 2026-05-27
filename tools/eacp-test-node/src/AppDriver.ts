@@ -94,6 +94,19 @@ export class AppDriver
         return this.run('test.evaluate', { expression, ...this.timeout(options) });
     }
 
+    /**
+     * Returns the serialised HTML for `selector` (its outerHTML), or
+     * the full document if no selector is supplied. Useful for
+     * inspecting / snapshotting page state after a step.
+     */
+    dom(selector?: string, options?: CallOptions): Promise<string>
+    {
+        const payload: { selector?: string; timeoutMs?: number } =
+            { ...this.timeout(options) };
+        if (selector !== undefined) payload.selector = selector;
+        return this.run('test.dom', payload);
+    }
+
     private run<T>(command: string, payload: object): Promise<T>
     {
         return this.rpc.invoke<T>(command, payload);
