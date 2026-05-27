@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Threads/EventLoop.h"
+#include "../Utils/Common.h"
 #include <ea_data_structures/Pointers/OwningPointer.h>
 #include <string>
 
@@ -18,10 +19,18 @@ struct App : AppBase
 };
 
 using AppHandle = EA::OwningPointer<AppBase>;
+using AppFactory = Callback;
 
 AppHandle& getGlobalApp();
+AppFactory& getAppFactory();
 
 void quit();
+
+// Destroys the current app instance and recreates it via the factory
+// captured by run<T>(). Marshaled onto the message thread so it's
+// safe to call from any thread. Returns immediately — the destroy +
+// recreate happens on the next runloop tick.
+void restart();
 
 // Hands `url` off to the OS for its registered handler (e.g. the user's
 // default browser for http/https). Useful for OAuth flows where the
@@ -34,6 +43,7 @@ template <typename T>
 void run()
 {
     auto createFunc = [] { getGlobalApp().template create<App<T>>(); };
+    getAppFactory() = createFunc;
     Threads::runEventLoop(createFunc);
 }
 

@@ -1,0 +1,202 @@
+#include <eacp/Core/App/App.h>
+#include <eacp/Core/Threads/EventLoop.h>
+#include <NanoTest/NanoTest.h>
+
+#include <atomic>
+#include <chrono>
+#include <thread>
+
+using namespace nano;
+using eacp::Apps::App;
+using eacp::Apps::getAppFactory;
+using eacp::Apps::getGlobalApp;
+using eacp::Apps::quit;
+using eacp::Apps::restart;
+using eacp::Threads::callAsync;
+using eacp::Threads::runEventLoopFor;
+using eacp::Threads::stopEventLoop;
+
+namespace
+{
+
+struct CountedPayload
+{
+    static inline std::atomic<int> ctorCount {0};
+    static inline std::atomic<int> dtorCount {0};
+
+    CountedPayload() { ++ctorCount; }
+    ~CountedPayload() { ++dtorCount; }
+};
+
+void resetCounters()
+{
+    CountedPayload::ctorCount = 0;
+    CountedPayload::dtorCount = 0;
+}
+
+// App + factory live in process-wide singletons, so leaking state
+// between cases would let earlier tests poison later ones. Each test
+// calls this on entry to start from a known-empty baseline.
+void resetAppState()
+{
+    getGlobalApp().reset();
+    getAppFactory() = {};
+    resetCounters();
+}
+
+void installCountedFactory()
+{
+    getAppFactory() = [] { getGlobalApp().create<App<CountedPayload>>(); };
+}
+
+} // namespace
+
+auto tGlobalAppIsSingleton = test("App/getGlobalAppReturnsSameInstance") = []
+{
+    resetAppState();
+    check(&getGlobalApp() == &getGlobalApp());
+};
+
+auto tFactoryIsSingleton = test("App/getAppFactoryReturnsSameInstance") = []
+{
+    resetAppState();
+    check(&getAppFactory() == &getAppFactory());
+};
+
+auto tFactoryStartsEmpty = test("App/getAppFactoryStartsEmpty") = []
+{
+    resetAppState();
+    check(! getAppFactory());
+};
+
+auto tRunStyleFactoryCreatesApp = test("App/factoryInvocationCreatesAppInstance") = []
+{
+    resetAppState();
+    installCountedFactory();
+
+    check(getGlobalApp().get() == nullptr);
+    check(CountedPayload::ctorCount == 0);
+
+    getAppFactory()();
+
+    check(getGlobalApp().get() != nullptr);
+    check(CountedPayload::ctorCount == 1);
+    check(CountedPayload::dtorCount == 0);
+
+    getGlobalApp().reset();
+    check(CountedPayload::dtorCount == 1);
+
+    resetAppState();
+};
+
+auto tRestartReplacesInstance = test("App/restartDestroysOldInstanceAndCreatesNew") = []
+{
+    resetAppState();
+    installCountedFactory();
+
+    auto stopped = runEventLoopFor(
+        std::chrono::seconds(2),
+        []
+        {
+            getAppFactory()();
+
+            callAsync(
+                []
+                {
+                    check(CountedPayload::ctorCount == 1);
+                    check(CountedPayload::dtorCount == 0);
+                    check(getGlobalApp().get() != nullptr);
+
+                    restart();
+
+                    // restart() posts its destroy+recreate via callAsync;
+                    // this callAsync is queued right after and runs once
+                    // that work is done (FIFO ordering on the runloop).
+                    callAsync(
+                        []
+                        {
+                            check(CountedPayload::ctorCount == 2);
+                            check(CountedPayload::dtorCount == 1);
+                            check(getGlobalApp().get() != nullptr);
+                            stopEventLoop();
+                        });
+                });
+        });
+
+    check(stopped);
+    resetAppState();
+};
+
+auto tRestartWithoutFactoryIsSafe = test("App/restartIsNoOpWhenFactoryIsEmpty") = []
+{
+    resetAppState();
+
+    auto stopped = runEventLoopFor(
+        std::chrono::seconds(2),
+        []
+        {
+            restart();
+
+            callAsync(
+                []
+                {
+                    check(getGlobalApp().get() == nullptr);
+                    check(CountedPayload::ctorCount == 0);
+                    stopEventLoop();
+                });
+        });
+
+    check(stopped);
+    resetAppState();
+};
+
+auto tRestartFromAnyThread = test("App/restartIsSafeFromBackgroundThread") = []
+{
+    resetAppState();
+    installCountedFactory();
+
+    auto worker = std::thread();
+
+    auto stopped = runEventLoopFor(
+        std::chrono::seconds(2),
+        [&]
+        {
+            getAppFactory()();
+
+            worker = std::thread(
+                []
+                {
+                    restart();
+                    callAsync([] { stopEventLoop(); });
+                });
+        });
+
+    if (worker.joinable())
+        worker.join();
+
+    check(stopped);
+    check(CountedPayload::ctorCount == 2);
+    check(CountedPayload::dtorCount == 1);
+    resetAppState();
+};
+
+auto tQuitTearsDownAppAndStopsLoop = test("App/quitDestroysAppAndStopsLoop") = []
+{
+    resetAppState();
+    installCountedFactory();
+
+    auto stopped = runEventLoopFor(
+        std::chrono::seconds(2),
+        []
+        {
+            getAppFactory()();
+            callAsync([] { quit(); });
+        });
+
+    check(stopped);
+    check(CountedPayload::ctorCount == 1);
+    check(CountedPayload::dtorCount == 1);
+    check(getGlobalApp().get() == nullptr);
+
+    resetAppState();
+};

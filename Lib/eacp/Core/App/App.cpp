@@ -8,6 +8,11 @@ AppHandle& getGlobalApp()
     return Singleton::get<AppHandle>();
 }
 
+AppFactory& getAppFactory()
+{
+    return Singleton::get<AppFactory>();
+}
+
 void destroyApp()
 {
     getGlobalApp().reset();
@@ -22,5 +27,19 @@ void quit()
     };
 
     Threads::callAsync(quitFunc);
+}
+
+void restart()
+{
+    auto restartFunc = []
+    {
+        destroyApp();
+
+        auto& factory = getAppFactory();
+        if (factory)
+            factory();
+    };
+
+    Threads::callAsync(restartFunc);
 }
 } // namespace eacp::Apps

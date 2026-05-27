@@ -2,6 +2,7 @@
 
 #include "WebView.h"
 
+#include <eacp/Core/App/App.h>
 #include <eacp/Core/Threads/EventLoop.h>
 #include <eacp/Network/HTTPRpc/RpcServer.h>
 #include <eacp/Network/HTTPServer/HttpServer.h>
@@ -360,6 +361,19 @@ private:
                      return runJs(wrapExpr("window.__test.evaluate("
                                            + expr + ")"),
                                   timeout(p));
+                 });
+
+        table.on("test.restart",
+                 [](const Miro::JSON&) -> Miro::JSON
+                 {
+                     // Queues the destroy+recreate on the main loop and
+                     // returns straight away. The HTTP server bound by
+                     // this TestServer will be torn down as part of the
+                     // restart, so the calling client must reconnect
+                     // (same port — readPortEnv() is consulted again by
+                     // the new instance).
+                     eacp::Apps::restart();
+                     return Miro::JSON {true};
                  });
 
         table.on("test.waitFor",
