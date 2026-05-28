@@ -128,13 +128,13 @@ auto icEventsModule =
     check(events != nullptr);
     // Baseline:
     //   import type * as T from './schema';
-    //   export interface ServerEvents
+    //   export interface Events
     //   {
-    //       tick: T.Tick;
+    //       'tick': T.Tick;
     //   }
     check(contains(events->contents, "import type * as T from './schema';"));
-    check(contains(events->contents, "export interface ServerEvents"));
-    check(contains(events->contents, "tick: T.Tick;"));
+    check(contains(events->contents, "export interface Events"));
+    check(contains(events->contents, "'tick': T.Tick;"));
 };
 
 auto icHooksModule =
