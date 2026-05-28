@@ -48,8 +48,8 @@ std::string pathFromURL(std::string_view url, std::string_view indexFile)
 
 FileProvider fromResEmbed(std::string category)
 {
-    return [category = std::move(category)](std::string_view path)
-        -> std::optional<std::span<const std::uint8_t>>
+    return [category = std::move(category)](
+               std::string_view path) -> std::optional<std::span<const std::uint8_t>>
     {
         auto view = ResEmbed::get(std::string(path), category);
 
@@ -65,9 +65,8 @@ namespace
 ResourceProvider makeResourceProviderFromFiles(FileProvider provider,
                                                std::string indexFile)
 {
-    return [provider = std::move(provider),
-            indexFile = std::move(indexFile)](std::string_view url)
-        -> std::optional<ResourceResponse>
+    return [provider = std::move(provider), indexFile = std::move(indexFile)](
+               std::string_view url) -> std::optional<ResourceResponse>
     {
         auto path = pathFromURL(url, indexFile);
         auto bytes = provider ? provider(path) : std::nullopt;
@@ -90,12 +89,11 @@ void registerEmbeddedScheme(WebView::Options& options)
 
 bool shouldUseDevServer(const WebView::Options::Embedded& embedded)
 {
-    if (! embedded.enabled || ! embedded.preferDevServer
+    if (!embedded.enabled || !embedded.preferDevServer
         || embedded.devServerURL.empty())
         return false;
 
-    return probeDevServer(embedded.devServerURL,
-                          embedded.devServerProbeTimeoutMs);
+    return probeDevServer(embedded.devServerURL, embedded.devServerProbeTimeoutMs);
 }
 } // namespace
 
@@ -108,18 +106,32 @@ WebView::WebView(Options options)
 {
     auto useDevServer = shouldUseDevServer(options.embedded);
 
-    if (options.embedded.enabled && ! useDevServer)
+    if (options.embedded.enabled && !useDevServer)
         registerEmbeddedScheme(options);
 
     auto embedded = options.embedded;
     initNative(std::move(options));
 
-    if (! embedded.enabled || ! embedded.autoLoad)
+    if (!embedded.enabled || !embedded.autoLoad)
         return;
 
     if (useDevServer)
         loadURL(embedded.devServerURL);
     else
         loadURL(embedded.scheme + "://" + embedded.host + "/" + embedded.indexFile);
+}
+
+Threads::Async<std::string> WebView::callJS(const std::string& script)
+{
+    auto promise = Threads::AsyncPromise<std::string>();
+    evaluateJavaScript(script,
+                       [promise](const std::string& result, const std::string& error)
+                       {
+                           if (error.empty())
+                               promise.resolve(result);
+                           else
+                               promise.reject(error);
+                       });
+    return promise.get();
 }
 } // namespace eacp::Graphics

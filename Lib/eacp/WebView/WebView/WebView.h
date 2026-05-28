@@ -1,5 +1,6 @@
 #pragma once
 
+#include <eacp/Core/Threads/Async.h>
 #include <eacp/Graphics/Graphics.h>
 #include <ResEmbed/ResEmbed.h>
 #include <ea_data_structures/Pointers/OwningPointer.h>
@@ -84,6 +85,12 @@ public:
         std::function<void(const std::string& result, const std::string& error)>;
     void evaluateJavaScript(const std::string& script,
                             JSCallback callback = nullptr);
+
+    // Awaitable wrapper around evaluateJavaScript. The returned Async
+    // resolves with the script result string, or rejects with the
+    // error message if the script threw. Both resolve and reject fire
+    // on the main thread.
+    Threads::Async<std::string> callJS(const std::string& script);
 
     using SnapshotCallback = std::function<void(std::vector<std::uint8_t> pngBytes,
                                                 const std::string& error)>;

@@ -12,8 +12,8 @@ interface Layer
 }
 
 const layers: Layer[] = [
-    { speed: 1.0, size: 320, hue: 0 },
-    { speed: -1.7, size: 220, hue: 120 },
+    { speed: 1.0, size: 340, hue: 0 },
+    { speed: -1.7, size: 210, hue: 120 },
     { speed: 2.6, size: 130, hue: 240 },
 ];
 

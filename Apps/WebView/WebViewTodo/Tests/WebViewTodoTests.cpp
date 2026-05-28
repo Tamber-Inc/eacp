@@ -1,12 +1,18 @@
 #include "App.h"
 
+#include <eacp/Core/Threads/Async.h>
 #include <eacp/WebView/Test/TestApp.h>
 
 #include <NanoTest/NanoTest.h>
 
 #include <Miro/Miro.h>
 
+#include <chrono>
 #include <string>
+
+using namespace std::chrono_literals;
+using eacp::Threads::Async;
+using eacp::Threads::AsyncError;
 
 using namespace nano;
 using namespace eacp::WebView::Test;
@@ -101,4 +107,52 @@ auto tDomainRpcsReachable =
 
     check(after.items.size() == before.items.size() + 1);
     check(after.items[after.items.size() - 1].text == "Direct add via bridge");
+};
+
+auto tCallJsResolvesWithResult = test("WebViewTodo/callJsResolvesWithResult") = []
+{
+    auto app = TestApp<MyApp> {};
+    app.driver().waitFor(inputSelector);
+
+    auto result = app.app().webView.callJS("1 + 2").waitFor(2s);
+    check(result == "3");
+};
+
+auto tCallJsRejectsOnError = test("WebViewTodo/callJsRejectsOnJsException") = []
+{
+    auto app = TestApp<MyApp> {};
+    app.driver().waitFor(inputSelector);
+
+    auto threw = false;
+    try
+    {
+        app.app().webView.callJS("throw new Error('boom')").waitFor(2s);
+    }
+    catch (const AsyncError& e)
+    {
+        threw = true;
+        // evaluateJavaScript surfaces NSError::localizedDescription, which
+        // for WKWebView JS exceptions is a generic phrase rather than the
+        // thrown message itself. We just verify that a non-empty error
+        // text reached us.
+        check(std::string {e.what()}.size() > 0);
+    }
+    check(threw);
+};
+
+auto tCallJsChainsViaCoroutine = test("WebViewTodo/callJsChainsViaCoroutine") = []
+{
+    auto app = TestApp<MyApp> {};
+    app.driver().waitFor(inputSelector);
+
+    auto& webView = app.app().webView;
+    auto coro = [&]() -> Async<std::string>
+    {
+        auto sum = co_await webView.callJS("1 + 2");
+        auto wrapped = co_await webView.callJS("'val:' + (" + sum + ")");
+        co_return wrapped;
+    };
+
+    auto result = coro().waitFor(2s);
+    check(result == "val:3");
 };
