@@ -5,8 +5,10 @@
 // library is spliced into ${TARGET}Schema_Codegen by
 // eacp_add_webview_app, so the initializers below fire whenever an
 // app's codegen executable launches.
+//
+// The `events` format is owned by Miro upstream; only the React-hooks
+// format is registered here.
 
-#include "EventsFormat.h"
 #include "HooksFormat.h"
 
 #include "../WebView/EventRegistry.h"
@@ -35,16 +37,6 @@ std::span<const eacp::Graphics::EventEntry> eventsFor(
     auto& global = eacp::Graphics::Detail::eventRegistry();
     return {global.data(), static_cast<std::size_t>(global.size())};
 }
-
-[[maybe_unused]] const auto eventsFormat = registerFormat(Format {
-    "events",
-    ".events.ts",
-    [](const Context& ctx)
-    {
-        return eacp::Graphics::Codegen::formatEventsModule(
-            ctx.typeRoots, eventsFor(ctx), ctx.baseName);
-    },
-});
 
 [[maybe_unused]] const auto hooksFormat = registerFormat(Format {
     "hooks",

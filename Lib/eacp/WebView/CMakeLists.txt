@@ -102,7 +102,6 @@ add_ide_sources(eacp-webview)
 # Skipped when cross-compiling — symmetric with MiroTypeExportMain.
 if (NOT CMAKE_CROSSCOMPILING)
     add_library(eacp-webview-codegen OBJECT
-            Codegen/EventsFormat.cpp
             Codegen/HooksFormat.cpp
             Codegen/Register.cpp)
     target_link_libraries(eacp-webview-codegen PUBLIC Miro)

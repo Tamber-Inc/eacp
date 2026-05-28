@@ -134,11 +134,11 @@ function(eacp_add_webview_app TARGET)
             eacp_target_uses_schema(${TARGET} ${TARGET}Schema)
         endif ()
 
-        # Schema codegen needs eacp's events / hooks formatter
-        # registrations to be alive. Linking the eacp-webview-codegen
-        # OBJECT lib directly into the codegen executable splices its
-        # objects in and keeps the static-init constructors from being
-        # dropped by the linker.
+        # Schema codegen needs eacp's hooks formatter registration to
+        # be alive. Linking the eacp-webview-codegen OBJECT lib directly
+        # into the codegen executable splices its objects in and keeps
+        # the static-init constructors from being dropped by the
+        # linker.
         if (TARGET ${TARGET}Schema_Codegen)
             target_link_libraries(${TARGET}Schema_Codegen PRIVATE eacp-core)
             if (TARGET eacp-webview-codegen)

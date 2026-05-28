@@ -89,9 +89,9 @@ EA::Vector<EA::OwningPointer<EA::Listener>>
 //   - providing whatever setters/mutators its callers need
 //
 // Two registries are populated on static init: the event registry
-// (header-only, drives codegen — emits the ServerEvents type map and
-// the React hooks module) and the binder registry (drives runtime —
-// every transport auto-subscribes to broadcast changes to clients).
+// (header-only, drives codegen — emits the Events type map and the
+// React hooks module) and the binder registry (drives runtime — every
+// transport auto-subscribes to broadcast changes to clients).
 #define EACP_STATE(T, accessor, eventName)                                          \
     namespace                                                                       \
     {                                                                               \
@@ -128,7 +128,7 @@ EA::Vector<EA::OwningPointer<EA::Listener>>
 // EACP_EVENT — push-only event with no C++-side store and no auto-
 // binder. Use for patterns where the C++ side fires bridge.emit()
 // directly (e.g. a timer or a callback) and the frontend only needs
-// the typed `ServerEvents[name]` mapping for `backend.on(name, ...)`.
+// the typed `Events[name]` mapping for `backend.on(name, ...)`.
 //
 // Hooks codegen still emits a `use<Name>` factory backed by
 // `makeNativeEvent` (initial value = toJSON(T{})). If the matching
