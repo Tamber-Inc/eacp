@@ -205,11 +205,11 @@ struct AsyncJsState
     std::string error;
 };
 
-// Well-known default — agreed with the Node-side launcher's default
-// attach URL (tools/eacp-test-node/src/launch.ts). Picked once so a
-// manually launched app and `npm test` connect with zero env vars.
-// Test runners that spawn the app in parallel pass EACP_RPC_PORT=0
-// explicitly to fall back to an ephemeral port and dodge collisions.
+// Well-known default — agreed with the C++ test driver's default
+// attach URL (Lib/eacp/WebView/Test/Launch.h). Picked once so a
+// manually launched app and an attach-mode test runner connect with
+// zero env vars. Spawning runners pass EACP_RPC_PORT=0 explicitly to
+// fall back to an ephemeral port and dodge collisions.
 constexpr long defaultRpcPort = 8765;
 
 long readPortEnv()

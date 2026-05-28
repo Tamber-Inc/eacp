@@ -25,11 +25,10 @@
 #   )
 #
 # Tests: every WebView app built with EACP_WEBVIEW_ENABLE_TEST_SERVER
-# (on by default) automatically exposes an HTTP RPC test server on an
-# ephemeral port at startup (port printed to stdout as
-# `EACP_RPC_PORT=<n>`). Drive it from a Node-side runner — see the
-# WebViewTodo app's tests-node/ directory for an example. No CMake
-# wiring is needed for tests; the test project owns itself.
+# (on by default) exposes an HTTP RPC test server on an ephemeral
+# port at startup (port printed to stdout as `EACP_RPC_PORT=<n>`).
+# Drive it from a NanoTest binary via `eacp_add_webview_test(...)`
+# — see the WebViewTodo app's Tests/ directory for an example.
 #
 # Schema layout:
 #   - ${TARGET}Schema is the INTERFACE library produced by miro_export.

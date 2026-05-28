@@ -9,8 +9,9 @@ include(${CMAKE_CURRENT_LIST_DIR}/cmake/EacpWebViewApp.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/EacpWebViewTest.cmake)
 
 # Compiles a small HTTP RPC server into WebViewBridge that injects a
-# DOM-driving JS agent and exposes it as `test.*` commands. An
-# external Node runner can POST to /rpc to drive any WebView app.
+# DOM-driving JS agent and exposes it as `test.*` commands. The
+# matching client lives in Test/ (eacp-webview-test) and is what
+# eacp_add_webview_test() consumers link against.
 # The flag is read at runtime by TestServer::shouldEnableTestServer()
 # so the surrounding code stays free of preprocessor branches —
 # enabling/disabling only flips whether the server is instantiated,

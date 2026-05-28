@@ -22,9 +22,9 @@ std::string resolveSnapshotDir(std::string fromOptions)
     return (cwd / defaultSnapshotSubdir).string();
 }
 
-// Mirror of the JS side's sanitizer (eacp-test-node/AppDriver.ts).
-// Forward slashes pass through so callers can intentionally write into
-// sub-directories; anything else outside the portable set becomes '_'.
+// Forward slashes pass through so callers can intentionally write
+// into sub-directories; anything else outside the portable set
+// becomes '_'.
 std::string sanitizeSnapshotName(const std::string& name)
 {
     auto out = std::string {};
