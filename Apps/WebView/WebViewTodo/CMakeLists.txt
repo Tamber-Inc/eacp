@@ -7,3 +7,5 @@ eacp_add_webview_app(WebViewTodo
         BUNDLE_ID   com.eacp.webviewtodo
         BUNDLE_NAME "WebView Todo"
         REACT)
+
+add_subdirectory(Tests)

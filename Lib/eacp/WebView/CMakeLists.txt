@@ -6,6 +6,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/cmake/EacpWebViewVite.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/EacpWebViewBackend.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/EacpWebViewReact.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/EacpWebViewApp.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/EacpWebViewTest.cmake)
 
 # Compiles a small HTTP RPC server into WebViewBridge that injects a
 # DOM-driving JS agent and exposes it as `test.*` commands. An
