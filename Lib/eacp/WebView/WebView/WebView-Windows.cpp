@@ -5,9 +5,11 @@
 
 #include <algorithm>
 #include <ea_data_structures/Structures/Vector.h>
+#include <cassert>
 #include <unordered_map>
 #include <queue>
 #include <functional>
+#include <string>
 
 #include <objbase.h>
 
@@ -89,6 +91,15 @@ struct WebView::Native
         {
             DestroyWindow(childHwnd);
         }
+    }
+
+    // Native file drag-out is implemented on macOS only (WKWebView subclass +
+    // NSDraggingSession). The Windows drag bridge is not wired yet, so this is
+    // never reached; the assert marks it as unimplemented and fails loudly if
+    // a future bridge starts routing arm messages here.
+    void armFileDrag(const std::string&)
+    {
+        assert(false && "armFileDrag is macOS-only");
     }
 
     void ensureInitialized()
