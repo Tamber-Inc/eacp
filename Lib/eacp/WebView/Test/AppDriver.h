@@ -186,7 +186,9 @@ private:
     std::string snapshotDir;
 
     bool navigationFinished = false;
+    std::string navigationError;
     std::function<void(const std::string&)> previousFinishedHandler;
+    std::function<void(const std::string&)> previousFailedHandler;
 };
 
 } // namespace eacp::WebView::Test

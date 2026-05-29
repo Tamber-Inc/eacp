@@ -169,13 +169,29 @@ AppDriver::AppDriver(Graphics::WebView& webViewToUse,
         // Wake any pending waitForFirstNavigation pump.
         Threads::stopEventLoop();
     };
+
+    // Latch on failure too, so a broken scheme / 404 / etc. unblocks
+    // the wait immediately with a useful message instead of timing
+    // out after the full timeout.
+    previousFailedHandler = webView.onNavigationFailed;
+    webView.onNavigationFailed =
+        [this, previous = previousFailedHandler](const std::string& error)
+    {
+        if (previous)
+            previous(error);
+
+        navigationError = error;
+        navigationFinished = true;
+        Threads::stopEventLoop();
+    };
 }
 
 AppDriver::~AppDriver()
 {
-    // Restore the user's handler so a longer-lived WebView doesn't
+    // Restore the user's handlers so a longer-lived WebView doesn't
     // keep firing into this dead driver.
     webView.onNavigationFinished = std::move(previousFinishedHandler);
+    webView.onNavigationFailed = std::move(previousFailedHandler);
 }
 
 int AppDriver::effectiveTimeoutMs(const CallOptions& opts) const
@@ -214,6 +230,10 @@ void AppDriver::waitForFirstNavigation(const CallOptions& opts)
         throw std::runtime_error("AppDriver: page did not finish loading "
                                  "within " + std::to_string(timeout.count())
                                  + "ms");
+
+    if (!navigationError.empty())
+        throw std::runtime_error("AppDriver: navigation failed: "
+                                 + navigationError);
 }
 
 namespace
