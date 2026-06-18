@@ -14,4 +14,9 @@ if ((APPLE OR WIN32) AND EACP_BUILD_GRAPHICS)
     add_subdirectory(GPUWidgets)
     add_subdirectory(Sprites)
     add_subdirectory(CameraView)
+
+    # SwiftUI hosting is Apple-only.
+    if (APPLE)
+        add_subdirectory(SwiftUI)
+    endif ()
 endif ()
