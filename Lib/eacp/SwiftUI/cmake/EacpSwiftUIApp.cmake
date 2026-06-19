@@ -1,8 +1,16 @@
 # eacp_add_swiftui_app(<TARGET>
 #         SOURCES       <c++ sources>     # Main.cpp and any other C++/ObjC++
 #         SWIFT_SOURCES <swift sources>   # the app's SwiftUI views + @_cdecl glue
+#         [API          <Api::Type>]      # reflected C++ API to expose to Swift
+#         [API_HEADER   <header>]         # header declaring the API (required with API)
 #         BUNDLE_ID     <reverse-dns id>
 #         BUNDLE_NAME   "Display Name")
+#
+# When API/API_HEADER are given, Miro generates a typed Swift client (Schema*.
+# swift) from the reflected API and compiles it into the app's Swift module, so
+# SwiftUI can call C++ commands. The generated files land in <app>/generated and
+# are committed: cross-compiled (iOS) builds can't run the host codegen tool, so
+# they consume the committed copies (see CMAKE_CROSSCOMPILING in miro_export).
 #
 # Mirrors eacp_add_webview_app: it wires a foreign-UI app (here SwiftUI) into an
 # EACP executable. The app's Swift sources compile to a framework that exports
@@ -21,7 +29,7 @@
 # still generate.
 
 function(eacp_add_swiftui_app TARGET)
-    set(oneValueArgs BUNDLE_ID BUNDLE_NAME)
+    set(oneValueArgs BUNDLE_ID BUNDLE_NAME API API_HEADER)
     set(multiValueArgs SOURCES SWIFT_SOURCES)
     cmake_parse_arguments(ESA "" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
@@ -36,9 +44,48 @@ function(eacp_add_swiftui_app TARGET)
     # helper file so it resolves no matter which app directory calls in.
     set(host_header "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../SwiftUIHost.h")
 
-    add_library(${TARGET}_Swift SHARED ${ESA_SWIFT_SOURCES})
+    set(swift_sources ${ESA_SWIFT_SOURCES})
+
+    # Optional: generate a typed Swift client from a reflected C++ API.
+    if (ESA_API)
+        if (NOT ESA_API_HEADER)
+            message(FATAL_ERROR
+                    "eacp_add_swiftui_app(${TARGET}): API requires API_HEADER")
+        endif ()
+
+        set(gen_dir "${CMAKE_CURRENT_SOURCE_DIR}/generated")
+        set(gen_swift
+                "${gen_dir}/Schema.swift"
+                "${gen_dir}/Schema.runtime.swift"
+                "${gen_dir}/Schema.client.swift")
+
+        # Builds the ${TARGET}Schema_Codegen host tool (skipped automatically
+        # when cross-compiling — iOS then uses the committed generated files).
+        miro_export(${TARGET}Schema API ${ESA_API} API_HEADER ${ESA_API_HEADER})
+
+        if (NOT CMAKE_CROSSCOMPILING)
+            add_custom_command(
+                    OUTPUT ${gen_swift}
+                    COMMAND ${CMAKE_COMMAND} -E make_directory "${gen_dir}"
+                    COMMAND ${TARGET}Schema_Codegen --out "${gen_dir}" --name Schema
+                            --format swift --format swift-runtime --format swift-client
+                    DEPENDS ${TARGET}Schema_Codegen
+                    COMMENT "eacp-swiftui: generating Swift client for ${TARGET}"
+                    VERBATIM)
+            add_custom_target(${TARGET}_GenerateSwift DEPENDS ${gen_swift})
+        endif ()
+
+        set_source_files_properties(${gen_swift} PROPERTIES GENERATED TRUE)
+        list(APPEND swift_sources ${gen_swift})
+    endif ()
+
+    add_library(${TARGET}_Swift SHARED ${swift_sources})
     target_compile_options(${TARGET}_Swift PRIVATE
             "$<$<COMPILE_LANGUAGE:Swift>:SHELL:-import-objc-header ${host_header}>")
+
+    if (ESA_API AND NOT CMAKE_CROSSCOMPILING)
+        add_dependencies(${TARGET}_Swift ${TARGET}_GenerateSwift)
+    endif ()
 
     # Package the Swift module as a framework. A flat dylib links fine but isn't
     # found at runtime once the bundle leaves the build tree; an embedded

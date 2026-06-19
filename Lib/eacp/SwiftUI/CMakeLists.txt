@@ -1,6 +1,14 @@
 add_library(eacp-swiftui STATIC)
 
-target_link_libraries(eacp-swiftui PUBLIC eacp-graphics)
+find_package(Miro REQUIRED)
+
+# Miro is PUBLIC: SwiftUIBridge.h is header-only and binds the app's reflected
+# API to a Miro::Bridge, so consumers compile against Miro headers too.
+target_link_libraries(eacp-swiftui PUBLIC eacp-graphics Miro)
+
+# Forwards the Swift-facing dispatch C-ABI to Miro's BridgeC. Portable C++, but
+# the library only ever builds on Apple (see Lib/eacp/CMakeLists.txt).
+target_sources(eacp-swiftui PRIVATE SwiftUIDispatch.cpp)
 
 # SwiftUI hosting is Apple-only. The C++ side only touches AppKit/UIKit (it
 # embeds the native view Swift hands back); the SwiftUI framework itself is

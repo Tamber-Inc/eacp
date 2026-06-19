@@ -41,7 +41,10 @@ struct SwiftUIView::Native
     explicit Native(SwiftUIView& viewToUse)
         : view(viewToUse)
     {
-        host = eacp_swiftui_host_create(view.rootKey.c_str());
+        host = eacp_swiftui_host_create(view.rootKey.c_str(),
+                                        view.bridgeHandle,
+                                        &eacp_swiftui_dispatch,
+                                        &eacp_swiftui_string_free);
 
         if (host == nullptr)
             return;
@@ -79,8 +82,9 @@ struct SwiftUIView::Native
     EacpSwiftUIHost* host = nullptr;
 };
 
-SwiftUIView::SwiftUIView(std::string rootKeyToUse)
+SwiftUIView::SwiftUIView(std::string rootKeyToUse, MiroBridge* bridge)
     : rootKey(std::move(rootKeyToUse))
+    , bridgeHandle(bridge)
     , impl(*this)
 {
 }

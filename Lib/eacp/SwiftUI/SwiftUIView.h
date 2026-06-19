@@ -2,6 +2,8 @@
 
 #include <eacp/Graphics/View/View.h>
 
+#include "SwiftUIHost.h"
+
 #include <string>
 
 namespace eacp::Graphics
@@ -15,13 +17,17 @@ namespace eacp::Graphics
 class SwiftUIView : public View
 {
 public:
-    explicit SwiftUIView(std::string rootKey);
+    // rootKey selects the Swift-registered SwiftUI view. Pass a bound command
+    // bridge handle (SwiftUIBridge::handle()) to give that view a typed client
+    // into C++; leave it null for view-only hosting.
+    explicit SwiftUIView(std::string rootKey, MiroBridge* bridge = nullptr);
     ~SwiftUIView() override;
 
     void resized() override;
 
 private:
     std::string rootKey;
+    MiroBridge* bridgeHandle = nullptr;
 
     struct Native;
     Pimpl<Native> impl;
