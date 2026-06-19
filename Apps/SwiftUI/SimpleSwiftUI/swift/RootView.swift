@@ -10,17 +10,20 @@ import UIKit
 struct RootView: View {
     @State private var taps = 0
 
+    // Kept to APIs available at the project's deployment baseline (iOS 14 /
+    // macOS 11) so the same view compiles for every Apple target. Newer
+    // modifiers (foregroundStyle, .borderedProminent, ...) would need an
+    // `if #available` gate or a higher deployment target.
     var body: some View {
         VStack(spacing: 20) {
             Image(systemName: "swift")
                 .font(.system(size: 72))
-                .foregroundStyle(.orange)
+                .foregroundColor(.orange)
             Text("Hello from SwiftUI")
-                .font(.largeTitle.bold())
+                .font(Font.largeTitle.weight(.bold))
             Text("hosted inside a native EACP window")
-                .foregroundStyle(.secondary)
+                .foregroundColor(.secondary)
             Button("Tapped \(taps)") { taps += 1 }
-                .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(40)
