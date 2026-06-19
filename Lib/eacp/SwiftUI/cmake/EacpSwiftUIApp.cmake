@@ -11,8 +11,13 @@
 # and resolves the C symbols at link time.
 #
 # Swift must already be enabled at file scope by the caller's parent directory
-# (enable_language cannot run inside a function). When no Swift compiler is
-# present this is a no-op so non-Swift configurations still generate.
+# (enable_language cannot run inside a function). Verified to build under both
+# the Ninja and Xcode generators; only the Unix Makefiles generator can't
+# compile Swift. The Swift sources and the C++/ObjC++ sources stay in separate
+# targets (dylib vs executable) — that separation is what keeps the Xcode
+# generator happy, since it can't mix Swift with other languages in one target.
+# When no Swift compiler is present this is a no-op so non-Swift configurations
+# still generate.
 
 function(eacp_add_swiftui_app TARGET)
     set(oneValueArgs BUNDLE_ID BUNDLE_NAME)
@@ -21,8 +26,8 @@ function(eacp_add_swiftui_app TARGET)
 
     if (NOT CMAKE_Swift_COMPILER)
         message(STATUS
-                "${TARGET}: Swift not enabled; skipping SwiftUI app. Configure "
-                "with -G Ninja on Apple to build it.")
+                "${TARGET}: Swift not enabled; skipping SwiftUI app. Use the "
+                "Ninja or Xcode generator on Apple to build it.")
         return()
     endif ()
 
