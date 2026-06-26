@@ -51,6 +51,14 @@ extern "C"
     // Releases the host and the SwiftUI view/controller it owns.
     void eacp_swiftui_host_destroy(EacpSwiftUIHost* host);
 
+    // Delivers a named event payload (JSON) to the host's observable model,
+    // which SwiftUI observes — the C++ -> SwiftUI push channel. Called on the
+    // main thread (where EACP state changes fire), so the Swift side updates
+    // its @Published model synchronously.
+    void eacp_swiftui_host_deliver_event(EacpSwiftUIHost* host,
+                                         const char* eventName,
+                                         const char* payloadJson);
+
     // --- Implemented in eacp-swiftui (C++), called from Swift ---
 
     // Dispatches one command synchronously through the bound bridge. Same

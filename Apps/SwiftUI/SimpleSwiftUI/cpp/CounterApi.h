@@ -40,7 +40,9 @@ struct GreetResponse
     MIRO_REFLECT(message)
 };
 
-// The count lives here, in C++ — SwiftUI calls in to mutate and read it.
+// The count lives here, in C++ — SwiftUI calls in to mutate and read it, and
+// `changes` pushes every new value back out so SwiftUI can react without
+// polling (driven both by the increment command and an autonomous C++ timer).
 class CounterApi
 {
 public:
@@ -53,7 +55,7 @@ public:
 
     CounterResponse increment(const IncrementRequest& req)
     {
-        count += req.by;
+        setCount(count + req.by);
         return {count};
     }
 
@@ -64,7 +66,20 @@ public:
         return {"Hello from C++, " + req.name + "!"};
     }
 
+    // Called from a C++ timer to show autonomous C++ -> SwiftUI updates.
+    void tick() { setCount(count + 1); }
+
+    // Latest count; broadcasts on every change. Subscribe to its broadcaster
+    // and forward snapshot() to a SwiftUIView to make the value reactive.
+    Miro::Event<CounterResponse> changes;
+
 private:
+    void setCount(int value)
+    {
+        count = value;
+        changes.publish({count});
+    }
+
     int count = 0;
 };
 } // namespace Api

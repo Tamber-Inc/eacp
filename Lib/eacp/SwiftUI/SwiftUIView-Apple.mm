@@ -78,6 +78,12 @@ struct SwiftUIView::Native
         hostedView(host).frame = parent.bounds;
     }
 
+    void deliverEvent(const std::string& name, const std::string& json)
+    {
+        if (host != nullptr)
+            eacp_swiftui_host_deliver_event(host, name.c_str(), json.c_str());
+    }
+
     SwiftUIView& view;
     EacpSwiftUIHost* host = nullptr;
 };
@@ -95,6 +101,11 @@ void SwiftUIView::resized()
 {
     View::resized();
     impl->updateSize();
+}
+
+void SwiftUIView::deliverEvent(const std::string& name, const std::string& json)
+{
+    impl->deliverEvent(name, json);
 }
 
 } // namespace eacp::Graphics

@@ -25,6 +25,11 @@ public:
 
     void resized() override;
 
+    // Pushes a named event payload (JSON) to the hosted SwiftUI view's model.
+    // Wire this to a Miro::Event broadcaster to make C++ state changes reactive
+    // in SwiftUI. No-op when the host failed to create.
+    void deliverEvent(const std::string& name, const std::string& json);
+
 private:
     std::string rootKey;
     MiroBridge* bridgeHandle = nullptr;

@@ -42,13 +42,19 @@ private func makeClient(
     })
 }
 
-// The count is owned by C++; this view reads and mutates it through the typed
-// client. (No live push yet — the displayed value is refreshed from each
-// command's response. Reactive state arrives in the events milestone.)
+// Observable state the SwiftUI view renders. Updated from C++ through the event
+// sink (eacp_swiftui_host_deliver_event); @Published drives the re-render.
+final class AppModel: ObservableObject {
+    @Published var count = 0
+}
+
+// The count is owned by C++. Commands (the button) mutate it; the new value
+// arrives back through the event channel and updates `model`, so this view
+// never holds its own copy of the count.
 struct RootView: View {
+    @ObservedObject var model: AppModel
     let client: Client?
 
-    @State private var count = 0
     @State private var greeting = ""
     @State private var errorText: String?
 
@@ -57,8 +63,11 @@ struct RootView: View {
             Image(systemName: "swift")
                 .font(.system(size: 64))
                 .foregroundColor(.orange)
-            Text("Count (owned by C++): \(count)")
+            Text("Count (owned by C++): \(model.count)")
                 .font(Font.title.weight(.bold))
+            Text("incrementing from a C++ timer — pushed live")
+                .font(.footnote)
+                .foregroundColor(.secondary)
             Button("Increment via C++") { increment() }
             if !greeting.isEmpty {
                 Text(greeting).foregroundColor(.secondary)
@@ -69,54 +78,74 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(40)
-        .onAppear(perform: refresh)
     }
 
     private func increment() {
         guard let client else { errorText = "no bridge"; return }
         do {
-            count = try client.increment(IncrementRequest(by: 1)).value
+            // C++ increments and publishes; the new value comes back over the
+            // event channel, so we deliberately don't set the count here.
+            _ = try client.increment(IncrementRequest(by: 1))
             greeting = try client.greet(GreetRequest(name: "SwiftUI")).message
         } catch {
             errorText = "\(error)"
         }
     }
-
-    private func refresh() {
-        guard let client else { return }
-        count = (try? client.getCount().value) ?? 0
-    }
 }
 
-// Owns the SwiftUI host for as long as the C++ SwiftUIView holds the handle.
+// Owns the SwiftUI host (and its model) for as long as the C++ SwiftUIView
+// holds the handle.
 @MainActor
 final class SwiftUIHostBox {
+    let model = AppModel()
+
 #if os(macOS)
     let view: NSView
-
-    init?(_ root: AnyView?) {
-        guard let root else { return nil }
-        view = NSHostingView(rootView: root)
-    }
 #else
     let controller: UIViewController
     var view: UIView { controller.view }
-
-    init?(_ root: AnyView?) {
-        guard let root else { return nil }
-        controller = UIHostingController(rootView: root)
-    }
 #endif
 
-    static func makeRoot(
+    init?(
+        rootKey: String,
+        bridge: OpaquePointer?,
+        dispatch: EacpSwiftUIDispatchFn?,
+        stringFree: EacpSwiftUIStringFreeFn?
+    ) {
+        guard let root = SwiftUIHostBox.makeRoot(
+            rootKey, model, bridge, dispatch, stringFree
+        ) else { return nil }
+
+#if os(macOS)
+        view = NSHostingView(rootView: root)
+#else
+        controller = UIHostingController(rootView: root)
+#endif
+    }
+
+    func deliver(event: String, payload: String) {
+        switch event {
+        case "count":
+            if let data = payload.data(using: .utf8),
+               let response = try? JSONDecoder().decode(CounterResponse.self, from: data) {
+                model.count = response.value
+            }
+        default:
+            break
+        }
+    }
+
+    private static func makeRoot(
         _ rootKey: String,
+        _ model: AppModel,
         _ bridge: OpaquePointer?,
         _ dispatch: EacpSwiftUIDispatchFn?,
         _ stringFree: EacpSwiftUIStringFreeFn?
     ) -> AnyView? {
         switch rootKey {
         case "Root":
-            return AnyView(RootView(client: makeClient(bridge, dispatch, stringFree)))
+            return AnyView(
+                RootView(model: model, client: makeClient(bridge, dispatch, stringFree)))
         default:
             return nil
         }
@@ -137,8 +166,9 @@ public func eacp_swiftui_host_create(
 ) -> UnsafeMutableRawPointer? {
     let key = rootKey.map { String(cString: $0) } ?? ""
     let bits = MainActor.assumeIsolated { () -> UInt in
-        let root = SwiftUIHostBox.makeRoot(key, bridge, dispatch, stringFree)
-        guard let box = SwiftUIHostBox(root) else { return 0 }
+        guard let box = SwiftUIHostBox(
+            rootKey: key, bridge: bridge, dispatch: dispatch, stringFree: stringFree
+        ) else { return 0 }
         return UInt(bitPattern: Unmanaged.passRetained(box).toOpaque())
     }
     return UnsafeMutableRawPointer(bitPattern: bits)
@@ -160,4 +190,17 @@ public func eacp_swiftui_host_view(
 public func eacp_swiftui_host_destroy(_ handle: UnsafeMutableRawPointer?) {
     guard let handle else { return }
     Unmanaged<SwiftUIHostBox>.fromOpaque(handle).release()
+}
+
+@_cdecl("eacp_swiftui_host_deliver_event")
+public func eacp_swiftui_host_deliver_event(
+    _ handle: UnsafeMutableRawPointer?,
+    _ name: UnsafePointer<CChar>?,
+    _ payload: UnsafePointer<CChar>?
+) {
+    guard let handle else { return }
+    let box = Unmanaged<SwiftUIHostBox>.fromOpaque(handle).takeUnretainedValue()
+    let eventName = name.map { String(cString: $0) } ?? ""
+    let json = payload.map { String(cString: $0) } ?? "{}"
+    MainActor.assumeIsolated { box.deliver(event: eventName, payload: json) }
 }
