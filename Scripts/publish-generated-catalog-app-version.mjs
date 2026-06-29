@@ -18,6 +18,7 @@ import {
   findCatalogAppBundle,
 } from './lib/apphub-generated-catalog.mjs';
 import {
+  catalogProducts,
   replaceCatalogProduct,
 } from './lib/apphub-catalog.mjs';
 import {
@@ -57,10 +58,9 @@ downloadCatalog();
 
 const catalog = JSON.parse(readText(catalogPath));
 const productIndex = catalog.products.findIndex((product) => product.id === productId);
-if (productIndex < 0) {
-  throw new Error(`Product ${productId} does not exist in ${catalogUrl}`);
-}
-const currentProduct = catalog.products[productIndex];
+const currentProduct = productIndex >= 0
+  ? catalog.products[productIndex]
+  : productFromKnownCatalog(productId);
 if (currentProduct.kind !== 'App') {
   throw new Error(`Product ${productId} is ${currentProduct.kind}, not App`);
 }
@@ -187,7 +187,11 @@ function downloadCatalog() {
   ], { check: false });
   if (gcloudResult.status === 0) return;
 
-  throw new Error(`Cannot download catalog: ${catalogUrl}`);
+  writeJson(catalogPath, {
+    catalogVersion: Number.parseInt(version.split('.')[0], 10) || 1,
+    products: [],
+    signature: '',
+  });
 }
 
 function writeChannelIndex(indexPath) {
@@ -240,6 +244,25 @@ function titleForChannel(channel) {
 function envNonEmpty(name, fallback) {
   const value = env(name, fallback);
   return value && value.trim() ? value : fallback;
+}
+
+function productFromKnownCatalog(productId) {
+  const product = Object.values(catalogProducts)
+    .find((entry) => entry.id === productId);
+  if (!product) {
+    throw new Error(`Product ${productId} does not exist in ${catalogUrl}`);
+  }
+
+  return {
+    id: product.id,
+    name: product.name,
+    kind: product.kind,
+    bundleName: product.bundleName,
+    channel,
+    latestVersion: version,
+    dependencies: [],
+    artifacts: [],
+  };
 }
 
 function appExecutableName(appBundle) {
