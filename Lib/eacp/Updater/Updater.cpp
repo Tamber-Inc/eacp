@@ -897,6 +897,55 @@ InstallPlan planInstallWithDependencies(const ProductCatalog& catalog,
     return plan;
 }
 
+InstallPlan planUpdateProduct(const ProductCatalog& catalog,
+                              const Vector<ProductReceipt>& receipts,
+                              const std::string& productId,
+                              Platform platform,
+                              const std::string& artifactDirectory)
+{
+    return planUpdateProduct(catalog,
+                             receipts,
+                             productId,
+                             makeTarget(platform, Architecture::Any),
+                             artifactDirectory);
+}
+
+InstallPlan planUpdateProduct(const ProductCatalog& catalog,
+                              const Vector<ProductReceipt>& receipts,
+                              const std::string& productId,
+                              const Target& target,
+                              const std::string& artifactDirectory)
+{
+    auto plan = InstallPlan();
+    if (!isValidProductId(productId))
+        return plan;
+
+    auto* product = findProduct(catalog, productId);
+    if (product == nullptr)
+        return plan;
+
+    auto* receipt = findReceipt(receipts, productId);
+    if (receipt == nullptr)
+        return plan;
+
+    if (!isNewerVersion(product->latestVersion, receipt->version))
+        return plan;
+
+    auto artifact = artifactForTarget(*product, target);
+    if (artifact.url.empty())
+        return plan;
+
+    plan.operations.add(makeOperation(PlanAction::Update,
+                                      product->id,
+                                      product->name,
+                                      product->channel,
+                                      product->latestVersion,
+                                      artifactPathFor(artifactDirectory,
+                                                      product->id),
+                                      artifact.sha256));
+    return plan;
+}
+
 InstallPlan planUpdateAll(const ProductCatalog& catalog,
                           const Vector<ProductReceipt>& receipts,
                           Platform platform,

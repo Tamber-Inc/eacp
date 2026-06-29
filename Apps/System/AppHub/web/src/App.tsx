@@ -209,6 +209,10 @@ function ProductRow({ product }: { product: HubProduct })
 {
     const installed = product.state !== 'NotInstalled';
     const running = product.state === 'Running';
+    const updateAvailable = product.state === 'UpdateAvailable';
+    const installOrUpdate = updateAvailable
+        ? () => void backend.updateProduct({ productId: product.id })
+        : () => void backend.installProduct({ productId: product.id });
 
     return (
         <article className="product-row">
@@ -227,9 +231,9 @@ function ProductRow({ product }: { product: HubProduct })
                 <button
                     type="button"
                     className="primary"
-                    onClick={() => void backend.installProduct({ productId: product.id })}
+                    onClick={installOrUpdate}
                 >
-                    {product.state === 'UpdateAvailable'
+                    {updateAvailable
                         ? 'Update'
                         : installed
                             ? 'Reinstall'

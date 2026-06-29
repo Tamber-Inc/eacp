@@ -13,6 +13,8 @@ export function makeBackend(invoke: Invoke)
             invoke('checkUpdates', {}) as Promise<T.CommandResult>,
         installProduct: (req: T.ProductRequest): Promise<T.CommandResult> =>
             invoke('installProduct', req) as Promise<T.CommandResult>,
+        updateProduct: (req: T.ProductRequest): Promise<T.CommandResult> =>
+            invoke('updateProduct', req) as Promise<T.CommandResult>,
         openProduct: (req: T.ProductRequest): Promise<T.CommandResult> =>
             invoke('openProduct', req) as Promise<T.CommandResult>,
         closeProduct: (req: T.ProductRequest): Promise<T.CommandResult> =>

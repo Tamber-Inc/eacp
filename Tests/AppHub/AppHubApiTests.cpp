@@ -87,6 +87,30 @@ void writeReceipt(const fs::path& root, const std::string& installPath)
               Updater::receiptToJson(receipt));
 }
 
+void writeReceiptFor(const fs::path& root,
+                     const std::string& productId,
+                     const std::string& name,
+                     const std::string& version,
+                     const std::string& installPath,
+                     const std::string& artifactSha256)
+{
+    auto receipt = Updater::ProductReceipt();
+    receipt.productId = productId;
+    receipt.name = name;
+    receipt.version = version;
+    receipt.installPath = installPath;
+    receipt.channel = "stable";
+    receipt.artifactSha256 = artifactSha256;
+    receipt.installedAt = "2026-06-29T00:00:00Z";
+
+    auto options = Updater::MockHelperOptions();
+    options.root = root.string();
+    options.stagingRoot = (root / "staging").string();
+    auto helper = Updater::MockPrivilegedHelper(options);
+    writeFile(fs::path(helper.receiptsRoot()) / (productId + ".json"),
+              Updater::receiptToJson(receipt));
+}
+
 class ScopedEnvironmentVariable
 {
 public:
@@ -293,5 +317,58 @@ auto tLoadsConfiguredDevCatalog =
     {
         check(state.products[0].id == "com.eacp.webviewtodo");
         check(state.products[0].name == "WebView Todo");
+    }
+};
+
+auto tUpdateProductUpdatesOnlyRequestedInstalledProduct =
+    test("AppHub/updateProductUpdatesRequestedInstalledProduct") = []
+{
+    auto root = testRoot("targeted-update-product");
+    auto artifact = root / "artifacts" / "shared.clap.artifact";
+    writeFile(artifact, "clap-v2");
+
+    auto artifactHash = eacp::Crypto::sha256File(artifact.string());
+
+    auto product = Updater::Product();
+    product.id = "shared.clap";
+    product.name = "CLAP Model";
+    product.kind = Updater::PackageKind::Model;
+    product.channel = "stable";
+    product.latestVersion = "2.0.0";
+
+    auto productArtifact = Updater::ProductArtifact();
+    productArtifact.platform = Updater::Platform::Any;
+    productArtifact.architecture = Updater::Architecture::Any;
+    productArtifact.url = "file://" + artifact.string();
+    productArtifact.sha256 = artifactHash;
+    product.artifacts.add(productArtifact);
+
+    auto catalog = Updater::ProductCatalog();
+    catalog.catalogVersion = 2;
+    catalog.signature = "test";
+    catalog.products.add(product);
+    writeCatalogAt(root / "catalog.json", catalog);
+
+    writeReceiptFor(root,
+                    "shared.clap",
+                    "CLAP Model",
+                    "1.0.0",
+                    (root / "installed" / "shared.clap").string(),
+                    "old-hash");
+
+    auto api = Api::AppHubApi(root);
+    auto result = api.updateProduct({.productId = "shared.clap"});
+    auto helper = Updater::MockPrivilegedHelper(
+        Updater::MockHelperOptions {.root = root.string(),
+                                    .stagingRoot = (root / "staging").string()});
+    auto receipts = helper.receipts();
+    auto* receipt = Updater::findReceipt(receipts, "shared.clap");
+
+    check(result.ok);
+    check(receipt != nullptr);
+    if (receipt != nullptr)
+    {
+        check(receipt->version == "2.0.0");
+        check(receipt->artifactSha256 == artifactHash);
     }
 };

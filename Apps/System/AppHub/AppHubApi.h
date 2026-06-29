@@ -632,6 +632,7 @@ public:
                    &T::refresh,
                    &T::checkUpdates,
                    &T::installProduct,
+                   &T::updateProduct,
                    &T::openProduct,
                    &T::closeProduct,
                    &T::updateAll,
@@ -705,6 +706,50 @@ public:
         finishOperation(result.ok,
                         result.ok ? "Install complete" : result.message);
         return result.ok ? ok("Installed " + request.productId) : result;
+    }
+
+    CommandResult updateProduct(const ProductRequest& request)
+    {
+        if (request.productId.empty())
+            return fail("Update requires a product id");
+
+        beginOperation(HubOperationKind::Updating,
+                       "Updating " + request.productId,
+                       "Planning product update",
+                       request.productId);
+
+        if (Detail::isRunning(root, request.productId))
+        {
+            auto message = "Close running app before updating";
+            refreshState(message);
+            finishOperation(false, message);
+            return fail(message);
+        }
+
+        auto catalog = Detail::loadCatalogContaining(root, request.productId);
+        auto helper = Detail::makeMockHelper(root);
+        auto plan = Updater::planUpdateProduct(catalog,
+                                               helper.receipts(),
+                                               request.productId,
+                                               Detail::makeTarget(),
+                                               Detail::stagingRoot(root).string());
+
+        if (plan.operations.empty())
+        {
+            finishOperation(true, "No update available for " + request.productId);
+            return ok("No update available for " + request.productId);
+        }
+
+        if (auto staged = stagePlanArtifacts(plan, catalog); !staged.ok)
+        {
+            finishOperation(false, staged.message);
+            return staged;
+        }
+
+        auto result = executeInstallPlan(plan, catalog);
+        refreshState(result.ok ? "Updated " + request.productId : result.message);
+        finishOperation(result.ok, result.ok ? "Update complete" : result.message);
+        return result.ok ? ok("Updated " + request.productId) : result;
     }
 
     CommandResult openProduct(const ProductRequest& request)

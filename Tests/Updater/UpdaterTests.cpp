@@ -387,6 +387,86 @@ auto tPlanUpdateAllUpdatesSharedPackageIndependently =
     check(plan.operations[0].action == Updater::PlanAction::Update);
 };
 
+auto tPlanUpdateProductOnlyUpdatesRequestedInstalledProduct =
+    test("Updater/planUpdateProductOnlyUpdatesRequestedInstalledProduct") = []
+{
+    auto root = testRoot("targeted-update");
+    auto staging = root / "staging";
+    writeFile(staging / "tamber.editor.artifact", "editor-v2");
+    writeFile(staging / "tamber.capture.artifact", "capture-v2");
+
+    auto catalog = makeEmptyCatalog(2);
+
+    auto editor = makeProduct("tamber.editor",
+                              "Example Editor",
+                              Updater::PackageKind::App,
+                              "2.0.0");
+    editor.artifacts.add(makeArtifact(Platform::MacOS,
+                                      Architecture::Arm64,
+                                      "file://tamber.editor",
+                                      eacp::Crypto::sha256File(
+                                          (staging / "tamber.editor.artifact")
+                                              .string())));
+
+    auto capture = makeProduct("tamber.capture",
+                               "Example Capture",
+                               Updater::PackageKind::App,
+                               "2.0.0");
+    capture.artifacts.add(makeArtifact(Platform::MacOS,
+                                       Architecture::Arm64,
+                                       "file://tamber.capture",
+                                       eacp::Crypto::sha256File(
+                                           (staging / "tamber.capture.artifact")
+                                               .string())));
+
+    catalog.products.add(editor);
+    catalog.products.add(capture);
+
+    auto receipts = eacp::Vector<Updater::ProductReceipt>();
+    receipts.add(makeReceipt("tamber.editor", "1.0.0"));
+    receipts.add(makeReceipt("tamber.capture", "1.0.0"));
+
+    auto plan = Updater::planUpdateProduct(catalog,
+                                           receipts,
+                                           "tamber.editor",
+                                           makeTarget(Platform::MacOS,
+                                                      Architecture::Arm64),
+                                           staging.string());
+
+    check(plan.operations.size() == 1);
+    check(plan.operations[0].productId == "tamber.editor");
+    check(plan.operations[0].action == Updater::PlanAction::Update);
+};
+
+auto tPlanUpdateProductSkipsMissingOrCurrentProducts =
+    test("Updater/planUpdateProductSkipsMissingOrCurrentProducts") = []
+{
+    auto root = testRoot("targeted-update-empty");
+    auto staging = root / "staging";
+    auto artifact = staging / "tamber.editor.artifact";
+    writeFile(artifact, "editor-v2");
+
+    auto catalog = makeCatalog(eacp::Crypto::sha256File(artifact.string()));
+    catalog.products[0].latestVersion = "2.0.0";
+
+    auto currentReceipts = eacp::Vector<Updater::ProductReceipt>();
+    currentReceipts.add(makeReceipt("tamber.editor", "2.0.0"));
+
+    auto currentPlan = Updater::planUpdateProduct(catalog,
+                                                  currentReceipts,
+                                                  "tamber.editor",
+                                                  Platform::MacOS,
+                                                  staging.string());
+    auto missingPlan = Updater::planUpdateProduct(catalog,
+                                                  {},
+                                                  "tamber.editor",
+                                                  Platform::MacOS,
+                                                  staging.string());
+
+    check(currentPlan.operations.empty());
+    check(missingPlan.operations.empty());
+};
+
 auto tInstallPlanUsesEnumClassWithMiroJson =
     test("Updater/installPlanRoundTripsEnumClassThroughMiroJson") = []
 {

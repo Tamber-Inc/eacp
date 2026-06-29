@@ -5,6 +5,7 @@ export type Handlers = {
     refresh(): T.CommandResult | Promise<T.CommandResult>;
     checkUpdates(): T.CommandResult | Promise<T.CommandResult>;
     installProduct(req: T.ProductRequest): T.CommandResult | Promise<T.CommandResult>;
+    updateProduct(req: T.ProductRequest): T.CommandResult | Promise<T.CommandResult>;
     openProduct(req: T.ProductRequest): T.CommandResult | Promise<T.CommandResult>;
     closeProduct(req: T.ProductRequest): T.CommandResult | Promise<T.CommandResult>;
     updateAll(): T.CommandResult | Promise<T.CommandResult>;
@@ -34,6 +35,7 @@ export async function dispatch(handlers: Handlers, command: string, payload: unk
         case 'refresh': return await handlers.refresh();
         case 'checkUpdates': return await handlers.checkUpdates();
         case 'installProduct': return await handlers.installProduct(payload as T.ProductRequest);
+        case 'updateProduct': return await handlers.updateProduct(payload as T.ProductRequest);
         case 'openProduct': return await handlers.openProduct(payload as T.ProductRequest);
         case 'closeProduct': return await handlers.closeProduct(payload as T.ProductRequest);
         case 'updateAll': return await handlers.updateAll();

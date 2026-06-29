@@ -394,6 +394,7 @@ void printUsage()
         << "  AppHub [--root <path>] status\n"
         << "  AppHub [--root <path>] install <product-id>\n"
         << "  AppHub [--root <path>] catalog-install <product-id>\n"
+        << "  AppHub [--root <path>] catalog-update <product-id>\n"
         << "  AppHub [--root <path>] open <product-id>\n"
         << "  AppHub [--root <path>] catalog-open <product-id>\n"
         << "  AppHub [--root <path>] close <product-id>\n"
@@ -405,7 +406,7 @@ void printUsage()
         << "  AppHub launch-demo\n"
         << "  AppHub launch-hub\n"
         << "  AppHub [--root <path>] check-updates\n"
-        << "  AppHub [--root <path>] update\n"
+        << "  AppHub [--root <path>] update [product-id]\n"
         << "  AppHub [--root <path>] remove <product-id>\n"
         << "  AppHub --version\n\n"
         << "Default feeds:\n"
@@ -1111,6 +1112,18 @@ int main(int argc, char* argv[])
         std::cout << result.message << "\n";
         return result.ok ? 0 : 1;
     }
+    if (command == "catalog-update")
+    {
+        if (options.productId.empty())
+        {
+            std::cout << "catalog-update requires a product id\n";
+            return 2;
+        }
+        auto api = Api::AppHubApi(options.root);
+        auto result = api.updateProduct({.productId = options.productId});
+        std::cout << result.message << "\n";
+        return result.ok ? 0 : 1;
+    }
     if (command == "open")
     {
         if (options.productId.empty())
@@ -1158,7 +1171,16 @@ int main(int argc, char* argv[])
     if (command == "check-updates")
         return checkRemoteUpdates(options.root);
     if (command == "update")
+    {
+        if (!options.productId.empty())
+        {
+            auto api = Api::AppHubApi(options.root);
+            auto result = api.updateProduct({.productId = options.productId});
+            std::cout << result.message << "\n";
+            return result.ok ? 0 : 1;
+        }
         return updateAll(options.root);
+    }
     if (command == "remove")
     {
         if (options.productId.empty())

@@ -337,6 +337,16 @@ InstallPlan planInstallWithDependencies(const ProductCatalog& catalog,
                                         const std::string& productId,
                                         const Target& target,
                                         const std::string& artifactDirectory);
+InstallPlan planUpdateProduct(const ProductCatalog& catalog,
+                              const Vector<ProductReceipt>& receipts,
+                              const std::string& productId,
+                              Platform platform,
+                              const std::string& artifactDirectory);
+InstallPlan planUpdateProduct(const ProductCatalog& catalog,
+                              const Vector<ProductReceipt>& receipts,
+                              const std::string& productId,
+                              const Target& target,
+                              const std::string& artifactDirectory);
 InstallPlan planUpdateAll(const ProductCatalog& catalog,
                           const Vector<ProductReceipt>& receipts,
                           Platform platform,

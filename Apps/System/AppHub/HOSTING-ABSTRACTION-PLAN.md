@@ -253,6 +253,39 @@ contract between "the build" and "the engine": the engine consumes a
 stays pluggable. Do the catalog-generation abstraction first since it removes the
 per-app wiring; the engine extraction follows and gets a clean input.
 
+## Tamber app / shell wiring contract
+
+The shell integration should be boring to wire and pleasant to operate:
+
+- **Inputs:** a selected channel catalog URL, a hub manifest URL for self-update,
+  a state root, and the platform target. The shell should not know per-app zip
+  names or hashes; those live in `ProductCatalog`.
+- **State:** render `HubState.products` and `HubState.operation`. Product rows
+  already carry `installedVersion`, `latestVersion`, `state`, dependencies, and
+  bundle names. Operation events carry title/detail/product id and byte progress,
+  so the shell can show one progress surface for install, update, and self-update.
+- **Commands:** use `installProduct(productId)` for first install/reinstall,
+  `updateProduct(productId)` for a deliberate one-app update, `updateAll()` for
+  the sweep, `updateHub(manifestUrl)` for self-update, and `openProduct(productId)`
+  for launch. The CLI equivalents are `catalog-install <id>`,
+  `catalog-update <id>` / `update <id>`, bare `update`, and `update-hub`.
+- **Receipts:** installed state is receipt-driven. The shell should not infer
+  installation from files in `/Applications`; it should subscribe to or refresh
+  `HubState` after commands complete.
+- **Host app boundary:** AppHub stays a catalog/updater surface. TamberShell owns
+  channel selection, account/session policy, and app-specific presentation. The
+  updater code composes cleanly because it only needs a catalog source, a state
+  root, and command calls.
+
+That means a Tamber shell MVP can be a thin adapter:
+
+1. Construct or embed the AppHub backend with Tamber's channel URLs and state root.
+2. Render catalog products from `HubState`.
+3. Wire row buttons directly to `installProduct`, `updateProduct`, `openProduct`,
+   and bulk toolbar actions to `checkUpdates` / `updateAll`.
+4. Use `HubState.operation` for the global progress indicator and toast/result
+   text.
+
 ## Suggested sequencing
 
 0. Converge the data model: make `channel` first-class in `ProductCatalog`
