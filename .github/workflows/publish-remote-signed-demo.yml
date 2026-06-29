@@ -40,6 +40,8 @@ jobs:
       - uses: actions/checkout@v6
 
       - uses: 1password/install-cli-action@v3
+        with:
+          version: 2.34.0
 
       - name: Capture existing hub artifact hash
         if: inputs.include_hub != 'true' && inputs.publish_hub_update != 'true'
