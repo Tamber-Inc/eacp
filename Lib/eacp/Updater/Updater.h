@@ -220,6 +220,25 @@ struct ProductReceipt
                  installedAt)
 };
 
+struct RemoteArtifact
+{
+    std::string url;
+    std::string sha256;
+
+    MIRO_REFLECT(url, sha256)
+};
+
+struct RemoteAppManifest
+{
+    std::string productId;
+    std::string name;
+    std::string version;
+    std::string bundleName;
+    RemoteArtifact artifact;
+
+    MIRO_REFLECT(productId, name, version, bundleName, artifact)
+};
+
 enum class PlanAction
 {
     Install,

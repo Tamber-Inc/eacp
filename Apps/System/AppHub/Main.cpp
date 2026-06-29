@@ -1,9 +1,12 @@
 #include <eacp/Updater/Updater.h>
 
+#include <eacp/Core/Process/Process.h>
 #include <eacp/Core/Utils/SHA256.h>
+#include <eacp/Graphics/Graphics.h>
 
 #include "PrivilegedHelperClient.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -17,10 +20,22 @@
 #include <vector>
 
 namespace fs = std::filesystem;
+namespace Graphics = eacp::Graphics;
+namespace Processes = eacp::Processes;
 namespace Updater = eacp::Updater;
 
 #ifndef EACP_APPHUB_VERSION
 #define EACP_APPHUB_VERSION "0.0.0"
+#endif
+
+#ifndef EACP_APPHUB_DEMO_MANIFEST_URL
+#define EACP_APPHUB_DEMO_MANIFEST_URL \
+    "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/manifest.json"
+#endif
+
+#ifndef EACP_APPHUB_MANIFEST_URL
+#define EACP_APPHUB_MANIFEST_URL \
+    "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/hub-manifest.json"
 #endif
 
 #if !defined(_WIN32)
@@ -35,33 +50,27 @@ constexpr std::string_view editorId = "tamber.editor";
 constexpr std::string_view captureId = "tamber.capture";
 constexpr std::string_view runtimeId = "shared.onnxruntime";
 constexpr std::string_view modelId = "shared.clap";
+constexpr std::string_view defaultDemoManifestUrl = EACP_APPHUB_DEMO_MANIFEST_URL;
+constexpr std::string_view defaultHubManifestUrl = EACP_APPHUB_MANIFEST_URL;
+constexpr std::string_view installedDemoApp =
+    "/Applications/Tamber Local Update Demo.app";
+constexpr std::string_view installedDemoExecutable =
+    "/Applications/Tamber Local Update Demo.app/Contents/MacOS/"
+    "Tamber Local Update Demo";
+constexpr std::string_view installedHubApp = "/Applications/AppHub.app";
+constexpr std::string_view installedHubExecutable =
+    "/Applications/AppHub.app/Contents/MacOS/AppHub";
 
 struct CliOptions
 {
     fs::path root = fs::temp_directory_path() / "eacp-apphub-demo";
-    std::string command = "tui";
+    std::string command = "gui";
     std::string productId;
     std::string manifestUrl;
 };
 
-struct RemoteAppArtifact
-{
-    std::string url;
-    std::string sha256;
-
-    MIRO_REFLECT(url, sha256)
-};
-
-struct RemoteAppManifest
-{
-    std::string productId;
-    std::string name;
-    std::string version;
-    std::string bundleName;
-    RemoteAppArtifact artifact;
-
-    MIRO_REFLECT(productId, name, version, bundleName, artifact)
-};
+bool runProcess(const std::vector<std::string>& args);
+fs::path remoteDownloadRoot(const fs::path& root);
 
 void writeFile(const fs::path& path, const std::string& text)
 {
@@ -103,6 +112,91 @@ std::string readFile(const fs::path& path)
     return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 
+std::string downloadText(std::string_view url, const fs::path& output)
+{
+    std::error_code ec;
+    fs::create_directories(output.parent_path(), ec);
+    if (ec)
+        return {};
+
+    auto result =
+        Processes::run("/usr/bin/curl",
+                       {"--fail",
+                        "--location",
+                        "--silent",
+                        "--show-error",
+                        std::string(url),
+                        "--output",
+                        output.string()});
+    if (!result.exited || result.exitCode != 0)
+        return {};
+
+    return readFile(output);
+}
+
+std::string executableVersion(std::string_view executable)
+{
+    auto ec = std::error_code();
+    if (!fs::exists(fs::path(executable), ec))
+        return {};
+
+    auto result = Processes::run(std::string(executable), {"--version"});
+    if (!result.exited || result.exitCode != 0)
+        return {};
+
+    auto out = result.output;
+    while (!out.empty() && std::isspace(static_cast<unsigned char>(out.back())))
+        out.pop_back();
+    return out;
+}
+
+std::optional<Updater::RemoteAppManifest> remoteManifest(const fs::path& root,
+                                                         std::string_view url,
+                                                         std::string_view name)
+{
+    auto path = remoteDownloadRoot(root) / (std::string(name) + ".json");
+    auto raw = downloadText(url, path);
+    if (raw.empty())
+        return std::nullopt;
+
+    auto manifest = Updater::RemoteAppManifest();
+    try
+    {
+        Miro::fromJSONString(manifest, raw);
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+
+    return manifest;
+}
+
+std::string updateStatusFor(const fs::path& root,
+                            std::string_view manifestUrl,
+                            std::string_view manifestName,
+                            std::string_view installedExecutable,
+                            std::string_view missingLabel)
+{
+    auto manifest = remoteManifest(root, manifestUrl, manifestName);
+    if (!manifest)
+        return "Update check failed";
+
+    auto localVersion = executableVersion(installedExecutable);
+    if (localVersion.empty())
+        return std::string(missingLabel) + " is not installed";
+
+    if (Updater::isNewerVersion(manifest->version, localVersion))
+        return manifest->name + " update available: " + manifest->version;
+
+    return manifest->name + " is up to date: " + localVersion;
+}
+
+bool openBundle(std::string_view appPath)
+{
+    return runProcess({"/usr/bin/open", std::string(appPath)});
+}
+
 fs::path catalogPath(const fs::path& root)
 {
     return root / "catalog.json";
@@ -131,6 +225,12 @@ fs::path remoteDownloadRoot(const fs::path& root)
 fs::path remoteUnpackRoot(const fs::path& root)
 {
     return root / "remote-unpack";
+}
+
+fs::path& guiStateRoot()
+{
+    static auto root = fs::temp_directory_path() / "eacp-apphub-gui";
+    return root;
 }
 
 Updater::MockHelperOptions makeHelperOptions(const fs::path& root)
@@ -283,7 +383,7 @@ std::optional<CliOptions> parseArgs(int argc, char* argv[])
         {
             options.command = "version";
         }
-        else if (options.command == "tui")
+        else if (options.command == "gui")
         {
             options.command = arg;
         }
@@ -368,8 +468,9 @@ bool validBundleName(const std::string& bundleName)
 void printUsage()
 {
     std::cout
-        << "AppHub mock updater CLI\n\n"
+        << "AppHub updater\n\n"
         << "Usage:\n"
+        << "  AppHub\n"
         << "  AppHub [--root <path>] tui\n"
         << "  AppHub [--root <path>] demo\n"
         << "  AppHub [--root <path>] reset\n"
@@ -380,10 +481,18 @@ void printUsage()
         << "  AppHub [--root <path>] close <product-id>\n"
         << "  AppHub [--root <path>] publish-update\n"
         << "  AppHub [--root <path>] bless-helper\n"
-        << "  AppHub [--root <path>] remote-install --manifest-url <url>\n"
+        << "  AppHub [--root <path>] remote-install [--manifest-url <url>]\n"
+        << "  AppHub [--root <path>] update-demo [--manifest-url <url>]\n"
+        << "  AppHub [--root <path>] update-hub [--manifest-url <url>]\n"
+        << "  AppHub launch-demo\n"
+        << "  AppHub launch-hub\n"
+        << "  AppHub [--root <path>] check-updates\n"
         << "  AppHub [--root <path>] update\n"
         << "  AppHub [--root <path>] remove <product-id>\n"
         << "  AppHub --version\n\n"
+        << "Default feeds:\n"
+        << "  Demo App: " << defaultDemoManifestUrl << "\n"
+        << "  AppHub:   " << defaultHubManifestUrl << "\n\n"
         << "Products:\n"
         << "  " << editorId << "\n"
         << "  " << captureId << "\n"
@@ -541,11 +650,9 @@ int blessHelper()
 
 int remoteInstall(const fs::path& root, const std::string& manifestUrl)
 {
-    if (manifestUrl.empty())
-    {
-        std::cout << "remote-install requires --manifest-url <url>\n";
-        return 2;
-    }
+    auto effectiveManifestUrl = manifestUrl.empty()
+                                    ? std::string(defaultDemoManifestUrl)
+                                    : manifestUrl;
 
     auto downloads = remoteDownloadRoot(root);
     auto unpack = remoteUnpackRoot(root);
@@ -566,7 +673,7 @@ int remoteInstall(const fs::path& root, const std::string& manifestUrl)
                      "--location",
                      "--silent",
                      "--show-error",
-                     manifestUrl,
+                     effectiveManifestUrl,
                      "--output",
                      manifestPath.string()}))
     {
@@ -574,7 +681,7 @@ int remoteInstall(const fs::path& root, const std::string& manifestUrl)
         return 1;
     }
 
-    auto manifest = RemoteAppManifest();
+    auto manifest = Updater::RemoteAppManifest();
     try
     {
         Miro::fromJSONString(manifest, readFile(manifestPath));
@@ -676,6 +783,63 @@ int remoteInstall(const fs::path& root, const std::string& manifestUrl)
     if (fs::exists(executable, ec))
         runProcess({executable.string(), "--version"});
 
+    return 0;
+}
+
+int updateDemoApp(const fs::path& root, const std::string& manifestUrl)
+{
+    auto effectiveManifestUrl = manifestUrl.empty()
+                                    ? std::string(defaultDemoManifestUrl)
+                                    : manifestUrl;
+    return remoteInstall(root, effectiveManifestUrl);
+}
+
+int updateHubApp(const fs::path& root, const std::string& manifestUrl)
+{
+    auto effectiveManifestUrl = manifestUrl.empty()
+                                    ? std::string(defaultHubManifestUrl)
+                                    : manifestUrl;
+    return remoteInstall(root, effectiveManifestUrl);
+}
+
+int launchDemoApp()
+{
+    if (!openBundle(installedDemoApp))
+    {
+        std::cout << "Launch Demo App: failed\n";
+        return 1;
+    }
+
+    std::cout << "Launch Demo App: ok\n";
+    return 0;
+}
+
+int launchHubApp()
+{
+    if (!openBundle(installedHubApp))
+    {
+        std::cout << "Launch AppHub: failed\n";
+        return 1;
+    }
+
+    std::cout << "Launch AppHub: ok\n";
+    return 0;
+}
+
+int checkRemoteUpdates(const fs::path& root)
+{
+    std::cout << updateStatusFor(root,
+                                 defaultDemoManifestUrl,
+                                 "demo-manifest",
+                                 installedDemoExecutable,
+                                 "Demo App")
+              << "\n";
+    std::cout << updateStatusFor(root,
+                                 defaultHubManifestUrl,
+                                 "hub-manifest",
+                                 installedHubExecutable,
+                                 "AppHub")
+              << "\n";
     return 0;
 }
 
@@ -817,6 +981,174 @@ int runTui(const fs::path& root)
             std::cout << "Unknown choice\n";
     }
 }
+
+Graphics::Image makeTrayIcon()
+{
+    constexpr auto size = 36;
+    auto image = Graphics::Image(size, size);
+    auto center = (size - 1) / 2.f;
+
+    for (auto y = 0; y < size; ++y)
+    {
+        for (auto x = 0; x < size; ++x)
+        {
+            auto dx = (static_cast<float>(x) - center) / center;
+            auto dy = (static_cast<float>(y) - center) / center;
+            auto radius = std::sqrt(dx * dx + dy * dy);
+            auto alpha = std::clamp(1.12f - radius, 0.f, 1.f);
+            if (alpha <= 0.f)
+                continue;
+
+            image.set(x, y, Graphics::Color(0.18f, 0.66f, 0.58f, alpha));
+        }
+    }
+
+    return image;
+}
+
+struct HubPanelView final : Graphics::View
+{
+    HubPanelView()
+    {
+        background->setFillColor({0.09f, 0.10f, 0.11f});
+        title->setColor({0.94f, 0.96f, 0.96f});
+        version->setColor({0.64f, 0.72f, 0.74f});
+        demoStatus->setColor({0.53f, 0.82f, 0.76f});
+        hubStatus->setColor({0.53f, 0.82f, 0.76f});
+        feed->setColor({0.45f, 0.49f, 0.52f});
+
+        version->setText("Hub version: " EACP_APPHUB_VERSION);
+        demoStatus->setText("Demo App: choose Check for Updates");
+        hubStatus->setText("AppHub: choose Check for Updates");
+        feed->setText("Default feeds: GitHub remote-demo-v1");
+
+        addChildren({background, title, version, demoStatus, hubStatus, feed});
+    }
+
+    void setStatuses(const std::string& demo, const std::string& hub)
+    {
+        demoStatus->setText(demo);
+        hubStatus->setText(hub);
+        repaint();
+    }
+
+    void setWorking(const std::string& message)
+    {
+        demoStatus->setText(message);
+        repaint();
+    }
+
+    void resized() override
+    {
+        auto bounds = getLocalBounds();
+
+        auto path = Graphics::Path();
+        path.addRect(bounds);
+        background->setPath(path);
+
+        scaleToFit({background, title, version, demoStatus, hubStatus, feed});
+        title->setPosition({20.f, bounds.h - 42.f});
+        version->setPosition({20.f, bounds.h - 74.f});
+        demoStatus->setPosition({20.f, bounds.h - 112.f});
+        hubStatus->setPosition({20.f, bounds.h - 144.f});
+        feed->setPosition({20.f, 24.f});
+    }
+
+    Graphics::ShapeLayerView background;
+    Graphics::TextLayerView title {"Tamber AppHub"};
+    Graphics::TextLayerView version;
+    Graphics::TextLayerView demoStatus;
+    Graphics::TextLayerView hubStatus;
+    Graphics::TextLayerView feed;
+};
+
+struct AppHubGui
+{
+    AppHubGui()
+    {
+        eacp::Apps::setDockIconVisible(false);
+
+        window.setContentView(panel);
+        window.setVisible(false);
+
+        tray.setIcon(makeTrayIcon());
+        tray.setTooltip("Tamber AppHub");
+        tray.setMenu(createMenu());
+        tray.setOnClick([this] { togglePanel(); });
+    }
+
+    static Graphics::WindowOptions panelOptions()
+    {
+        auto options = Graphics::WindowOptions();
+        options.title = "Tamber AppHub";
+        options.width = 380;
+        options.height = 210;
+        options.isPrimary = false;
+        options.flags = {Graphics::WindowFlags::Borderless};
+        options.cornerRadius = 10.f;
+        options.alwaysOnTop = true;
+        options.visibleOnAllWorkspaces = true;
+        options.showInactive = true;
+        return options;
+    }
+
+    Graphics::Menu createMenu()
+    {
+        auto menu = Graphics::Menu();
+        menu.add(Graphics::MenuItem::withAction("Show AppHub", [this] {
+            togglePanel();
+        }));
+        menu.add(Graphics::MenuItem::withAction("Check for Updates", [this] {
+            checkForUpdates();
+        }));
+        menu.addSeparator();
+        menu.add(Graphics::MenuItem::withAction("Install / Update Demo App", [this] {
+            panel.setWorking("Installing Demo App...");
+            auto status = updateDemoApp(root, {});
+            panel.setWorking(status == 0 ? "Demo App install/update finished"
+                                         : "Demo App install/update failed");
+        }));
+        menu.add(Graphics::MenuItem::withAction("Launch Demo App", [] {
+            launchDemoApp();
+        }));
+        menu.addSeparator();
+        menu.add(Graphics::MenuItem::withAction("Update AppHub", [this] {
+            panel.setWorking("Updating AppHub...");
+            auto status = updateHubApp(root, {});
+            panel.setWorking(status == 0 ? "AppHub update finished"
+                                         : "AppHub update failed");
+        }));
+        menu.add(Graphics::MenuItem::withAction("Install Privileged Helper", [] {
+            blessHelper();
+        }));
+        menu.addSeparator();
+        menu.add(Graphics::MenuItem::withAction("Quit", [] { eacp::Apps::quit(); }));
+        return menu;
+    }
+
+    void togglePanel() { window.setVisible(!window.isVisible()); }
+
+    void checkForUpdates()
+    {
+        panel.setStatuses(
+            updateStatusFor(root,
+                            defaultDemoManifestUrl,
+                            "demo-manifest",
+                            installedDemoExecutable,
+                            "Demo App"),
+            updateStatusFor(root,
+                            defaultHubManifestUrl,
+                            "hub-manifest",
+                            installedHubExecutable,
+                            "AppHub"));
+        window.setVisible(true);
+    }
+
+    fs::path root = guiStateRoot();
+    HubPanelView panel;
+    Graphics::Window window {panelOptions()};
+    Graphics::TrayIcon tray;
+};
 } // namespace
 
 int main(int argc, char* argv[])
@@ -839,6 +1171,12 @@ int main(int argc, char* argv[])
     if (command == "version")
     {
         std::cout << EACP_APPHUB_VERSION << "\n";
+        return 0;
+    }
+    if (command == "gui")
+    {
+        guiStateRoot() = options.root;
+        eacp::Apps::run<AppHubGui>(argc, argv);
         return 0;
     }
     if (command == "tui")
@@ -884,6 +1222,16 @@ int main(int argc, char* argv[])
         return blessHelper();
     if (command == "remote-install")
         return remoteInstall(options.root, options.manifestUrl);
+    if (command == "update-demo")
+        return updateDemoApp(options.root, options.manifestUrl);
+    if (command == "update-hub")
+        return updateHubApp(options.root, options.manifestUrl);
+    if (command == "launch-demo")
+        return launchDemoApp();
+    if (command == "launch-hub")
+        return launchHubApp();
+    if (command == "check-updates")
+        return checkRemoteUpdates(options.root);
     if (command == "update")
         return updateAll(options.root);
     if (command == "remove")

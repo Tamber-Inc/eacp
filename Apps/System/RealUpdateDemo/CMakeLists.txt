@@ -8,12 +8,20 @@ set(EACP_REAL_UPDATE_DEMO_BUNDLE_ID
     CACHE STRING
     "Bundle identifier for the real local HTTP update demo app")
 
+set(EACP_REAL_UPDATE_DEMO_MANIFEST_URL
+    "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/manifest.json"
+    CACHE STRING
+    "Default update manifest URL for the real update demo app")
+
 add_executable(RealUpdateDemo MACOSX_BUNDLE Main.cpp)
 set_default_target_setting(RealUpdateDemo)
+target_link_libraries(RealUpdateDemo PRIVATE eacp-graphics eacp-updater)
+eacp_set_gui_subsystem(RealUpdateDemo)
 
 target_compile_definitions(RealUpdateDemo
     PRIVATE
-        EACP_REAL_UPDATE_DEMO_VERSION="${EACP_REAL_UPDATE_DEMO_VERSION}")
+        EACP_REAL_UPDATE_DEMO_VERSION="${EACP_REAL_UPDATE_DEMO_VERSION}"
+        EACP_REAL_UPDATE_DEMO_MANIFEST_URL="${EACP_REAL_UPDATE_DEMO_MANIFEST_URL}")
 
 if (APPLE)
     configure_file(

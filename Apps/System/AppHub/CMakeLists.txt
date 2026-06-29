@@ -8,6 +8,14 @@ set(EACP_APPHUB_HELPER_LABEL
     "com.tamber.AppHub.PrivilegedHelper"
     CACHE STRING
     "AppHub privileged helper launchd label")
+set(EACP_APPHUB_DEMO_MANIFEST_URL
+    "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/manifest.json"
+    CACHE STRING
+    "Default Demo App manifest URL used by AppHub")
+set(EACP_APPHUB_MANIFEST_URL
+    "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/hub-manifest.json"
+    CACHE STRING
+    "Default AppHub self-update manifest URL")
 set(EACP_APPHUB_APP_SIGNING_REQUIREMENT
     "identifier \"${EACP_APPHUB_BUNDLE_ID}\" and anchor apple generic"
     CACHE STRING
@@ -23,7 +31,8 @@ else ()
     add_executable(AppHub Main.cpp PrivilegedHelperClient-Unsupported.cpp)
 endif ()
 
-target_link_libraries(AppHub PRIVATE eacp-updater)
+target_link_libraries(AppHub PRIVATE eacp-updater eacp-graphics)
+eacp_set_gui_subsystem(AppHub)
 
 set_default_target_setting(AppHub)
 
@@ -31,6 +40,8 @@ target_compile_definitions(AppHub
     PRIVATE
         EACP_APPHUB_VERSION="${EACP_APPHUB_VERSION}"
         EACP_APPHUB_HELPER_LABEL="${EACP_APPHUB_HELPER_LABEL}"
+        EACP_APPHUB_DEMO_MANIFEST_URL="${EACP_APPHUB_DEMO_MANIFEST_URL}"
+        EACP_APPHUB_MANIFEST_URL="${EACP_APPHUB_MANIFEST_URL}"
 )
 
 if (APPLE)
