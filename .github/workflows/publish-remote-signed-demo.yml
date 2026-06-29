@@ -120,6 +120,8 @@ jobs:
 
           ditto -x -k "$apphub_zip" "$smoke_root"
           codesign --verify --strict --verbose=2 "${smoke_root}/AppHub.app"
+          xcrun stapler validate "${smoke_root}/AppHub.app"
+          spctl --assess --type execute --verbose=4 "${smoke_root}/AppHub.app"
           codesign --verify --strict --verbose=2 \
             "${smoke_root}/AppHub.app/Contents/Library/LaunchServices/com.tamber.AppHub.PrivilegedHelper"
 
@@ -161,6 +163,8 @@ jobs:
                   catalog-install "$product_id"
                 test -d "/Applications/${bundle_name}"
                 codesign --verify --strict --verbose=2 "/Applications/${bundle_name}"
+                xcrun stapler validate "/Applications/${bundle_name}"
+                spctl --assess --type execute --verbose=4 "/Applications/${bundle_name}"
               done
 
           "${smoke_root}/AppHub.app/Contents/MacOS/AppHub" \
@@ -185,6 +189,8 @@ jobs:
 
           ditto -x -k "$apphub_zip" "$smoke_root"
           codesign --verify --strict --verbose=2 "${smoke_root}/AppHub.app"
+          xcrun stapler validate "${smoke_root}/AppHub.app"
+          spctl --assess --type execute --verbose=4 "${smoke_root}/AppHub.app"
           codesign --verify --strict --verbose=2 \
             "${smoke_root}/AppHub.app/Contents/Library/LaunchServices/com.tamber.AppHub.PrivilegedHelper"
 
@@ -203,4 +209,6 @@ jobs:
           installed_version="$("$installed" --version)"
           test "$installed_version" = "$VERSION"
           codesign --verify --strict --verbose=2 /Applications/AppHub.app
+          xcrun stapler validate /Applications/AppHub.app
+          spctl --assess --type execute --verbose=4 /Applications/AppHub.app
           echo "Installed remote signed AppHub ${installed_version} from ${manifest_url}"

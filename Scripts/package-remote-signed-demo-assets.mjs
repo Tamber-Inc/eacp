@@ -15,7 +15,10 @@ import {
 } from './lib/cli.mjs';
 import {
   ensureTamberSigningIdentity,
+  notarizeAndStapleApps,
   signPath,
+  validateStapledApp,
+  verifyGatekeeperApp,
   verifyAppHubDeploymentTarget,
   verifyAppHubPrivilegedHelper,
   verifyCodeSignature,
@@ -99,11 +102,16 @@ verifyMachODeploymentTargetAtMost(
 );
 
 log(`Sign ${generatedCatalog.products.length} AppHub catalog apps`);
+const catalogAppBundles = [];
 for (const product of generatedCatalog.products) {
   const appBundle = findCatalogAppBundle(buildDir, product);
+  catalogAppBundles.push(appBundle);
   signPath(appBundle);
   verifyCodeSignature(appBundle);
 }
+
+log('Notarize and staple release apps');
+notarizeAndStapleApps([appHubApp, demoApp, ...catalogAppBundles]);
 
 log('Verify Demo App version');
 run(join(demoApp, 'Contents', 'MacOS', demoBinaryName), ['--version']);
@@ -121,6 +129,8 @@ const packagedAppHub = join(packagedVerifyDir, 'AppHub.app');
 verifyCodeSignature(packagedAppHub);
 verifyAppHubDeploymentTarget(packagedAppHub, macOSDeploymentTarget);
 verifyAppHubPrivilegedHelper(packagedAppHub);
+validateStapledApp(packagedAppHub);
+verifyGatekeeperApp(packagedAppHub);
 
 log('Verify packaged catalog app artifacts');
 const packagedAppsVerifyDir = join(buildDir, 'packaged-catalog-apps-verify');
@@ -137,7 +147,10 @@ generateCatalogFromProducts({
 for (const product of generatedCatalog.products) {
   const artifactName = `${product.id}-${product.latestVersion}.app.zip`;
   run('ditto', ['-x', '-k', join(outDir, artifactName), packagedAppsVerifyDir]);
-  verifyCodeSignature(join(packagedAppsVerifyDir, product.bundleName));
+  const packagedApp = join(packagedAppsVerifyDir, product.bundleName);
+  verifyCodeSignature(packagedApp);
+  validateStapledApp(packagedApp);
+  verifyGatekeeperApp(packagedApp);
 }
 
 const demoSha = sha256File(join(outDir, demoZip));

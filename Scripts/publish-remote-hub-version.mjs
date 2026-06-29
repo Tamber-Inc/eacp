@@ -14,10 +14,13 @@ import {
 } from './lib/cli.mjs';
 import {
   ensureTamberSigningIdentity,
+  notarizeAndStapleApps,
   signPath,
+  validateStapledApp,
   verifyAppHubDeploymentTarget,
   verifyAppHubPrivilegedHelper,
   verifyCodeSignature,
+  verifyGatekeeperApp,
 } from './lib/macos-signing.mjs';
 
 const version = env('VERSION', '2.0.0');
@@ -73,6 +76,9 @@ signPath(appHubApp);
 verifyAppHubDeploymentTarget(appHubApp, macOSDeploymentTarget);
 verifyAppHubPrivilegedHelper(appHubApp);
 
+log(`Notarize and staple AppHub ${version}`);
+notarizeAndStapleApps([appHubApp]);
+
 log('Verify AppHub version');
 run(join(appHubApp, 'Contents', 'MacOS', appHubBinaryName), ['--version']);
 
@@ -88,6 +94,8 @@ const packagedAppHub = join(packagedVerifyDir, appHubAppName);
 verifyCodeSignature(packagedAppHub);
 verifyAppHubDeploymentTarget(packagedAppHub, macOSDeploymentTarget);
 verifyAppHubPrivilegedHelper(packagedAppHub);
+validateStapledApp(packagedAppHub);
+verifyGatekeeperApp(packagedAppHub);
 
 const appHubSha = sha256File(join(outDir, appHubZip));
 const manifest = {

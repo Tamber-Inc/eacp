@@ -14,7 +14,11 @@ import {
 } from './lib/cli.mjs';
 import {
   ensureTamberSigningIdentity,
+  notarizeAndStapleApps,
   signPath,
+  validateStapledApp,
+  verifyCodeSignature,
+  verifyGatekeeperApp,
   verifyMachODeploymentTargetAtMost,
 } from './lib/macos-signing.mjs';
 
@@ -61,12 +65,24 @@ verifyMachODeploymentTargetAtMost(
   macOSDeploymentTarget,
 );
 
+log(`Notarize and staple Demo App ${version}`);
+notarizeAndStapleApps([demoApp]);
+
 log('Verify Demo App version');
 run(join(demoApp, 'Contents', 'MacOS', demoBinaryName), ['--version']);
 
 log(`Package Demo App ${version}`);
 cleanDir(outDir);
 run('ditto', ['-c', '-k', '--keepParent', demoApp, join(outDir, demoZip)]);
+
+log(`Verify packaged Demo App ${version}`);
+const packagedVerifyDir = join(buildDir, 'packaged-demo-verify');
+cleanDir(packagedVerifyDir);
+run('ditto', ['-x', '-k', join(outDir, demoZip), packagedVerifyDir]);
+const packagedDemoApp = join(packagedVerifyDir, demoAppName);
+verifyCodeSignature(packagedDemoApp);
+validateStapledApp(packagedDemoApp);
+verifyGatekeeperApp(packagedDemoApp);
 
 const demoSha = sha256File(join(outDir, demoZip));
 const manifest = {
