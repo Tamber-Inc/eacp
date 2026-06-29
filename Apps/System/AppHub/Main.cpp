@@ -8,12 +8,20 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <spawn.h>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <vector>
 
 namespace fs = std::filesystem;
 namespace Updater = eacp::Updater;
+
+#if !defined(_WIN32)
+extern char** environ;
+#endif
 
 namespace
 {
@@ -29,6 +37,26 @@ struct CliOptions
     fs::path root = fs::temp_directory_path() / "eacp-apphub-demo";
     std::string command = "tui";
     std::string productId;
+    std::string manifestUrl;
+};
+
+struct RemoteAppArtifact
+{
+    std::string url;
+    std::string sha256;
+
+    MIRO_REFLECT(url, sha256)
+};
+
+struct RemoteAppManifest
+{
+    std::string productId;
+    std::string name;
+    std::string version;
+    std::string bundleName;
+    RemoteAppArtifact artifact;
+
+    MIRO_REFLECT(productId, name, version, bundleName, artifact)
 };
 
 void writeFile(const fs::path& path, const std::string& text)
@@ -89,6 +117,16 @@ fs::path runningRoot(const fs::path& root)
 fs::path runningPath(const fs::path& root, const std::string& productId)
 {
     return runningRoot(root) / (productId + ".running");
+}
+
+fs::path remoteDownloadRoot(const fs::path& root)
+{
+    return root / "remote-downloads";
+}
+
+fs::path remoteUnpackRoot(const fs::path& root)
+{
+    return root / "remote-unpack";
 }
 
 Updater::MockHelperOptions makeHelperOptions(const fs::path& root)
@@ -241,6 +279,12 @@ std::optional<CliOptions> parseArgs(int argc, char* argv[])
         {
             options.command = arg;
         }
+        else if (arg == "--manifest-url")
+        {
+            if (i + 1 >= argc)
+                return std::nullopt;
+            options.manifestUrl = argv[++i];
+        }
         else if (options.productId.empty())
         {
             options.productId = arg;
@@ -252,6 +296,65 @@ std::optional<CliOptions> parseArgs(int argc, char* argv[])
     }
 
     return options;
+}
+
+bool runProcess(const std::vector<std::string>& args)
+{
+    if (args.empty())
+        return false;
+
+#if defined(_WIN32)
+    return false;
+#else
+    auto argv = std::vector<char*>();
+    argv.reserve(args.size() + 1);
+    for (const auto& arg: args)
+        argv.push_back(const_cast<char*>(arg.c_str()));
+    argv.push_back(nullptr);
+
+    auto pid = pid_t {};
+    auto status = posix_spawnp(&pid, argv[0], nullptr, nullptr, argv.data(), environ);
+    if (status != 0)
+        return false;
+
+    auto waitStatus = 0;
+    if (waitpid(pid, &waitStatus, 0) < 0)
+        return false;
+
+    return WIFEXITED(waitStatus) && WEXITSTATUS(waitStatus) == 0;
+#endif
+}
+
+bool runInstallProcess(std::vector<std::string> args)
+{
+#if defined(_WIN32)
+    return false;
+#else
+    if (::access("/Applications", W_OK) == 0)
+        return runProcess(args);
+
+    args.insert(args.begin(), "sudo");
+    return runProcess(args);
+#endif
+}
+
+bool validBundleName(const std::string& bundleName)
+{
+    constexpr auto suffix = std::string_view(".app");
+    if (bundleName.size() <= suffix.size()
+        || bundleName.compare(bundleName.size() - suffix.size(),
+                              suffix.size(),
+                              suffix) != 0)
+        return false;
+
+    for (auto c: bundleName)
+    {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != ' '
+            && c != '.' && c != '-' && c != '_')
+            return false;
+    }
+
+    return true;
 }
 
 void printUsage()
@@ -269,6 +372,7 @@ void printUsage()
         << "  AppHub [--root <path>] close <product-id>\n"
         << "  AppHub [--root <path>] publish-update\n"
         << "  AppHub [--root <path>] bless-helper\n"
+        << "  AppHub [--root <path>] remote-install --manifest-url <url>\n"
         << "  AppHub [--root <path>] update\n"
         << "  AppHub [--root <path>] remove <product-id>\n\n"
         << "Products:\n"
@@ -423,6 +527,146 @@ int blessHelper()
     }
 
     std::cout << "Bless helper: ok\n";
+    return 0;
+}
+
+int remoteInstall(const fs::path& root, const std::string& manifestUrl)
+{
+    if (manifestUrl.empty())
+    {
+        std::cout << "remote-install requires --manifest-url <url>\n";
+        return 2;
+    }
+
+    auto downloads = remoteDownloadRoot(root);
+    auto unpack = remoteUnpackRoot(root);
+    auto manifestPath = downloads / "manifest.json";
+    auto artifactPath = downloads / "artifact.app.zip";
+
+    std::error_code ec;
+    fs::create_directories(downloads, ec);
+    if (ec)
+    {
+        std::cout << "Remote install: failed to create download directory\n";
+        return 1;
+    }
+
+    std::cout << "Remote install: downloading manifest\n";
+    if (!runProcess({"/usr/bin/curl",
+                     "--fail",
+                     "--location",
+                     "--silent",
+                     "--show-error",
+                     manifestUrl,
+                     "--output",
+                     manifestPath.string()}))
+    {
+        std::cout << "Remote install: manifest download failed\n";
+        return 1;
+    }
+
+    auto manifest = RemoteAppManifest();
+    try
+    {
+        Miro::fromJSONString(manifest, readFile(manifestPath));
+    }
+    catch (...)
+    {
+        std::cout << "Remote install: invalid manifest\n";
+        return 1;
+    }
+
+    if (!Updater::isValidProductId(manifest.productId)
+        || !validBundleName(manifest.bundleName)
+        || manifest.artifact.url.empty()
+        || manifest.artifact.sha256.empty())
+    {
+        std::cout << "Remote install: manifest failed validation\n";
+        return 1;
+    }
+
+    std::cout << "Remote install: downloading " << manifest.name << " "
+              << manifest.version << "\n";
+    if (!runProcess({"/usr/bin/curl",
+                     "--fail",
+                     "--location",
+                     "--silent",
+                     "--show-error",
+                     manifest.artifact.url,
+                     "--output",
+                     artifactPath.string()}))
+    {
+        std::cout << "Remote install: artifact download failed\n";
+        return 1;
+    }
+
+    auto actualHash = eacp::Crypto::sha256File(artifactPath.string());
+    if (actualHash != manifest.artifact.sha256)
+    {
+        std::cout << "Remote install: artifact hash mismatch\n";
+        return 1;
+    }
+
+    fs::remove_all(unpack, ec);
+    fs::create_directories(unpack, ec);
+    if (ec)
+    {
+        std::cout << "Remote install: failed to create unpack directory\n";
+        return 1;
+    }
+
+    if (!runProcess({"/usr/bin/ditto",
+                     "-x",
+                     "-k",
+                     artifactPath.string(),
+                     unpack.string()}))
+    {
+        std::cout << "Remote install: failed to unpack artifact\n";
+        return 1;
+    }
+
+    auto unpackedApp = unpack / manifest.bundleName;
+    if (!fs::is_directory(unpackedApp, ec))
+    {
+        std::cout << "Remote install: artifact did not contain "
+                  << manifest.bundleName << "\n";
+        return 1;
+    }
+
+    auto installPath = fs::path("/Applications") / manifest.bundleName;
+    auto rollbackPath = fs::path("/Applications") / (manifest.bundleName + ".rollback");
+
+    std::cout << "Remote install: installing to " << installPath << "\n";
+    if (!runInstallProcess({"/bin/rm", "-rf", rollbackPath.string()}))
+    {
+        std::cout << "Remote install: failed to remove old rollback\n";
+        return 1;
+    }
+
+    if (fs::exists(installPath, ec)
+        && !runInstallProcess({"/bin/mv",
+                               installPath.string(),
+                               rollbackPath.string()}))
+    {
+        std::cout << "Remote install: failed to create rollback\n";
+        return 1;
+    }
+
+    if (!runInstallProcess({"/usr/bin/ditto",
+                            unpackedApp.string(),
+                            installPath.string()}))
+    {
+        std::cout << "Remote install: failed to install app\n";
+        return 1;
+    }
+
+    auto executable =
+        installPath / "Contents" / "MacOS" / manifest.name;
+    std::cout << "Remote install: installed " << manifest.name << " "
+              << manifest.version << "\n";
+    if (fs::exists(executable, ec))
+        runProcess({executable.string(), "--version"});
+
     return 0;
 }
 
@@ -624,6 +868,8 @@ int main(int argc, char* argv[])
         return publishUpdate(options.root);
     if (command == "bless-helper")
         return blessHelper();
+    if (command == "remote-install")
+        return remoteInstall(options.root, options.manifestUrl);
     if (command == "update")
         return updateAll(options.root);
     if (command == "remove")
