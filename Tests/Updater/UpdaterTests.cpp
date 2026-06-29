@@ -207,6 +207,62 @@ auto tCatalogUsesMiroJson = test("Updater/catalogRoundTripsThroughMiroJson") = [
     check(parsed.products[0].artifacts[0].sha256 == "hash");
 };
 
+auto tGeneratedCatalogParsesManyProducts =
+    test("Updater/generatedCatalogParsesManyProducts") = []
+{
+    auto catalog = Updater::ProductCatalog();
+    catalog.catalogVersion = 7;
+    catalog.signature = "catalog-signature";
+
+    for (auto i = 0; i < 40; ++i)
+    {
+        auto id = std::string("eacp.demo.") + std::to_string(i);
+        auto product = makeProduct(id,
+                                   std::string("EACP Demo ") + std::to_string(i),
+                                   i % 3 == 0 ? Updater::PackageKind::Runtime
+                                              : Updater::PackageKind::App,
+                                   std::string("9.9.") + std::to_string(i));
+        product.bundleName = std::string("EACP Demo ") + std::to_string(i)
+                             + ".app";
+        if (i > 0)
+            product.dependencies.add("eacp.demo.0");
+
+        product.artifacts.add(makeArtifact(Platform::MacOS,
+                                           Architecture::Arm64,
+                                           "https://example.test/arm64.zip",
+                                           "arm64-hash"));
+        product.artifacts.add(makeArtifact(Platform::MacOS,
+                                           Architecture::Universal,
+                                           "https://example.test/universal.zip",
+                                           "universal-hash"));
+        catalog.products.add(product);
+    }
+
+    auto parsed = Updater::parseCatalogJson(Updater::catalogToJson(catalog));
+    check(parsed.catalogVersion == 7);
+    check(parsed.signature == "catalog-signature");
+    check(parsed.products.size() == 40);
+    check(parsed.products[0].kind == Updater::PackageKind::Runtime);
+    check(parsed.products[1].dependencies[0] == "eacp.demo.0");
+    check(parsed.products[39].bundleName == "EACP Demo 39.app");
+    check(parsed.products[39].artifacts[1].architecture
+          == Architecture::Universal);
+};
+
+auto tCatalogParserKeepsNumericEnumCompatibility =
+    test("Updater/catalogParserKeepsNumericEnumCompatibility") = []
+{
+    auto json = std::string(
+        R"({"catalogVersion":1,"products":[{"id":"eacp.demo","name":"Demo","kind":0,"bundleName":"Demo.app","channel":"stable","latestVersion":"1.2.3","dependencies":[],"artifacts":[{"platform":2,"architecture":2,"url":"https://example.test/demo.zip","sha256":"demo-hash","signature":"demo-signature"}]}],"signature":"catalog-signature"})");
+
+    auto parsed = Updater::parseCatalogJson(json);
+    check(parsed.products.size() == 1);
+    check(parsed.products[0].kind == Updater::PackageKind::App);
+    check(parsed.products[0].artifacts[0].platform == Platform::MacOS);
+    check(parsed.products[0].artifacts[0].architecture
+          == Architecture::Arm64);
+};
+
 auto tArtifactForTargetPrefersExactVariant =
     test("Updater/artifactForTargetPrefersExactVariant") = []
 {

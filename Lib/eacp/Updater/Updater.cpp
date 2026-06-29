@@ -14,6 +14,7 @@
 #include <sstream>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -313,6 +314,150 @@ PlanOperation makeOperation(PlanAction action,
     return operation;
 }
 
+const Miro::Json::Object* objectOrNull(const Miro::JSON& value)
+{
+    return value.isObject() ? &value.asObject() : nullptr;
+}
+
+const Miro::Json::Array* arrayOrNull(const Miro::JSON& value)
+{
+    return value.isArray() ? &value.asArray() : nullptr;
+}
+
+const Miro::JSON* findJson(const Miro::Json::Object& object,
+                           std::string_view key)
+{
+    return Miro::Json::find(object, key);
+}
+
+std::string readString(const Miro::Json::Object& object,
+                       std::string_view key,
+                       std::string fallback = {})
+{
+    if (const auto* value = findJson(object, key))
+        if (value->isString())
+            return value->asString();
+
+    return fallback;
+}
+
+int readInt(const Miro::Json::Object& object,
+            std::string_view key,
+            int fallback = 0)
+{
+    if (const auto* value = findJson(object, key))
+        if (value->isNumber())
+            return static_cast<int>(value->asNumber());
+
+    return fallback;
+}
+
+template <typename Enum>
+Enum readEnum(const Miro::Json::Object& object,
+              std::string_view key,
+              Enum fallback)
+{
+    using Underlying = std::underlying_type_t<Enum>;
+
+    if (const auto* value = findJson(object, key))
+    {
+        if (value->isString())
+            if (auto parsed = Miro::enumFromString<Enum>(value->asString()))
+                return *parsed;
+
+        if (value->isNumber())
+            return static_cast<Enum>(
+                static_cast<Underlying>(static_cast<int>(value->asNumber())));
+    }
+
+    return fallback;
+}
+
+Vector<std::string> readStringArray(const Miro::Json::Object& object,
+                                    std::string_view key)
+{
+    auto result = Vector<std::string>();
+
+    const auto* value = findJson(object, key);
+    if (value == nullptr)
+        return result;
+
+    const auto* array = arrayOrNull(*value);
+    if (array == nullptr)
+        return result;
+
+    for (const auto& item: *array)
+        if (item.isString())
+            result.add(item.asString());
+
+    return result;
+}
+
+ProductArtifact readProductArtifact(const Miro::Json::Object& object)
+{
+    auto artifact = ProductArtifact();
+    artifact.platform =
+        readEnum(object, "platform", artifact.platform);
+    artifact.architecture =
+        readEnum(object, "architecture", artifact.architecture);
+    artifact.url = readString(object, "url");
+    artifact.sha256 = readString(object, "sha256");
+    artifact.signature = readString(object, "signature");
+    return artifact;
+}
+
+Vector<ProductArtifact> readProductArtifacts(const Miro::Json::Object& object)
+{
+    auto result = Vector<ProductArtifact>();
+
+    const auto* value = findJson(object, "artifacts");
+    if (value == nullptr)
+        return result;
+
+    const auto* array = arrayOrNull(*value);
+    if (array == nullptr)
+        return result;
+
+    for (const auto& item: *array)
+        if (const auto* artifactObject = objectOrNull(item))
+            result.add(readProductArtifact(*artifactObject));
+
+    return result;
+}
+
+Product readProduct(const Miro::Json::Object& object)
+{
+    auto product = Product();
+    product.id = readString(object, "id");
+    product.name = readString(object, "name");
+    product.kind = readEnum(object, "kind", product.kind);
+    product.bundleName = readString(object, "bundleName");
+    product.channel = readString(object, "channel", product.channel);
+    product.latestVersion = readString(object, "latestVersion");
+    product.dependencies = readStringArray(object, "dependencies");
+    product.artifacts = readProductArtifacts(object);
+    return product;
+}
+
+Vector<Product> readProducts(const Miro::Json::Object& object)
+{
+    auto result = Vector<Product>();
+
+    const auto* value = findJson(object, "products");
+    if (value == nullptr)
+        return result;
+
+    const auto* array = arrayOrNull(*value);
+    if (array == nullptr)
+        return result;
+
+    for (const auto& item: *array)
+        if (const auto* productObject = objectOrNull(item))
+            result.add(readProduct(*productObject));
+
+    return result;
+}
+
 ProductReceipt makeReceipt(const PlanOperation& op, const fs::path& productDir)
 {
     auto receipt = ProductReceipt();
@@ -488,7 +633,15 @@ InstallResult executeInstall(const PreparedOperation& op)
 ProductCatalog parseCatalogJson(const std::string& json)
 {
     auto catalog = ProductCatalog();
-    Miro::fromJSONString(catalog, json);
+    auto root = Miro::Json::parse(json);
+
+    const auto* object = objectOrNull(root);
+    if (object == nullptr)
+        return catalog;
+
+    catalog.catalogVersion = readInt(*object, "catalogVersion");
+    catalog.products = readProducts(*object);
+    catalog.signature = readString(*object, "signature");
     return catalog;
 }
 
