@@ -127,7 +127,7 @@ jobs:
           echo "AppHub artifact unchanged: $current"
 
       - name: Smoke install Demo App from published internet artifacts
-        if: inputs.publish_hub_update != 'true'
+        if: inputs.publish_hub_update != 'true' && inputs.catalog_product_id == ''
         run: |
           set -euo pipefail
 
@@ -194,6 +194,66 @@ jobs:
           grep -F "no updates available" "${smoke_root}/catalog-update.txt"
 
           echo "Installed ${product_count} remote signed catalog apps from ${RELEASE_BASE_URL}/apphub-catalog.json"
+
+      - name: Smoke install catalog app from published internet artifacts
+        if: inputs.publish_hub_update != 'true' && inputs.catalog_product_id != ''
+        run: |
+          set -euo pipefail
+
+          smoke_root="$(mktemp -d)"
+          apphub_zip="${smoke_root}/AppHub-remote-demo.app.zip"
+
+          curl --fail --location --silent --show-error \
+            "${RELEASE_BASE_URL}/AppHub-remote-demo.app.zip" \
+            --output "$apphub_zip"
+
+          ditto -x -k "$apphub_zip" "$smoke_root"
+          codesign --verify --strict --verbose=2 "${smoke_root}/AppHub.app"
+          xcrun stapler validate "${smoke_root}/AppHub.app"
+          spctl --assess --type execute --verbose=4 "${smoke_root}/AppHub.app"
+          codesign --verify --strict --verbose=2 \
+            "${smoke_root}/AppHub.app/Contents/Library/LaunchServices/com.tamber.AppHub.PrivilegedHelper"
+
+          /usr/bin/perl -e 'alarm shift; exec @ARGV' 60 \
+            sudo "${smoke_root}/AppHub.app/Contents/MacOS/AppHub" bless-helper
+          codesign --verify --strict --verbose=2 \
+            /Library/PrivilegedHelperTools/com.tamber.AppHub.PrivilegedHelper
+
+          catalog_json="${smoke_root}/apphub-catalog.json"
+          curl --fail --location --silent --show-error \
+            "${RELEASE_BASE_URL}/apphub-catalog.json" \
+            --output "$catalog_json"
+
+          bundle_name="$(node -e "
+            const c=require(process.argv[1]);
+            const id=process.argv[2];
+            const version=process.argv[3];
+            const p=c.products.find((entry)=>entry.id===id);
+            if (!p) throw new Error('missing product '+id);
+            if (p.latestVersion !== version) throw new Error(id+' has version '+p.latestVersion+', expected '+version);
+            if (!p.artifacts?.[0]?.url?.includes(id+'-'+version+'.app.zip')) throw new Error('unexpected artifact url '+p.artifacts?.[0]?.url);
+            console.log(p.bundleName);
+          " "$catalog_json" "$APPHUB_CATALOG_PRODUCT_ID" "$VERSION")"
+
+          "${smoke_root}/AppHub.app/Contents/MacOS/AppHub" \
+            --root "${smoke_root}/hub-state" \
+            list | tee "${smoke_root}/catalog-list.txt"
+          grep -F "$APPHUB_CATALOG_PRODUCT_ID" "${smoke_root}/catalog-list.txt"
+
+          "${smoke_root}/AppHub.app/Contents/MacOS/AppHub" \
+            --root "${smoke_root}/hub-state" \
+            catalog-install "$APPHUB_CATALOG_PRODUCT_ID"
+          test -d "/Applications/${bundle_name}"
+          codesign --verify --strict --verbose=2 "/Applications/${bundle_name}"
+          xcrun stapler validate "/Applications/${bundle_name}"
+          spctl --assess --type execute --verbose=4 "/Applications/${bundle_name}"
+
+          "${smoke_root}/AppHub.app/Contents/MacOS/AppHub" \
+            --root "${smoke_root}/hub-state" \
+            catalog-update "$APPHUB_CATALOG_PRODUCT_ID" | tee "${smoke_root}/catalog-update.txt"
+          grep -F "no updates available" "${smoke_root}/catalog-update.txt"
+
+          echo "Installed ${APPHUB_CATALOG_PRODUCT_ID} ${VERSION} from ${RELEASE_BASE_URL}/apphub-catalog.json"
 
       - name: Smoke install AppHub from published internet artifacts
         if: inputs.publish_hub_update == 'true'
