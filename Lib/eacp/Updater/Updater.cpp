@@ -1,11 +1,14 @@
 #include "Updater.h"
 
+#include <eacp/Core/Process/Process.h>
 #include <eacp/Core/Utils/SHA256.h>
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -167,6 +170,41 @@ bool atomicWriteTextFile(const fs::path& path, const std::string& text)
     fs::rename(temp, path, ec);
     return !ec;
 }
+
+bool extractArchiveTo(const fs::path& archive, const fs::path& destination)
+{
+#if defined(__APPLE__)
+    auto result = Processes::run(
+        "/usr/bin/ditto",
+        {"-x", "-k", archive.string(), destination.string()});
+#else
+    // bsdtar (Windows ships tar.exe, most Linux distributions provide it) can
+    // unpack the zip artifacts the hub stages without a third-party dependency.
+    auto result = Processes::run(
+        "tar",
+        {"-x", "-f", archive.string(), "-C", destination.string()});
+#endif
+    return result.exited && result.exitCode == 0;
+}
+
+#if defined(_WIN32)
+fs::path createTemporaryInstallDirectory(const std::string& prefix)
+{
+    static std::atomic<unsigned long long> counter {0};
+    auto base = fs::temp_directory_path();
+
+    for (auto attempt = 0; attempt < 4096; ++attempt)
+    {
+        auto candidate =
+            base / (prefix + "-" + std::to_string(counter.fetch_add(1)));
+        std::error_code ec;
+        if (fs::create_directory(candidate, ec))
+            return candidate;
+    }
+
+    return {};
+}
+#endif
 
 struct PreparedOperation
 {
@@ -426,18 +464,8 @@ InstallResult executeInstall(const PreparedOperation& op)
     auto artifactPath = fs::path(op.request.artifactPath);
     if (artifactPath.extension() == ".zip")
     {
-#if defined(_WIN32)
-        return error("zip app artifact install is not implemented on Windows yet");
-#else
-        if (!runProcess({"/usr/bin/ditto",
-                         "-x",
-                         "-k",
-                         artifactPath.string(),
-                         op.installStagingDir.string()}))
-        {
+        if (!extractArchiveTo(artifactPath, op.installStagingDir))
             return error("failed to unpack app artifact");
-        }
-#endif
     }
     else if (fs::is_directory(artifactPath, ec))
     {
@@ -679,13 +707,137 @@ InstallResult validateUnpackedAppBundle(
 } // namespace
 #endif
 
+std::filesystem::path protectedApplicationsRoot()
+{
+    if (auto* installRootOverride = std::getenv("EACP_APPHUB_INSTALL_ROOT");
+        installRootOverride != nullptr && *installRootOverride != '\0')
+        return fs::path(installRootOverride);
+
+#if defined(_WIN32)
+    if (auto* programFiles = std::getenv("ProgramFiles");
+        programFiles != nullptr && *programFiles != '\0')
+        return fs::path(programFiles) / "Tamber" / "Apps";
+    return fs::temp_directory_path() / "Tamber" / "Apps";
+#elif defined(__APPLE__)
+    return fs::path("/Applications");
+#else
+    if (auto* home = std::getenv("HOME"); home != nullptr && *home != '\0')
+        return fs::path(home) / ".local" / "share" / "Tamber" / "Apps";
+    return fs::temp_directory_path() / "Tamber" / "Apps";
+#endif
+}
+
+#if defined(_WIN32)
 InstallResult installAppBundleArtifact(
     const PrivilegedAppBundleInstallRequest& request)
 {
-#if defined(_WIN32)
-    (void) request;
-    return error("privileged app bundle installs are not implemented on Windows");
+    if (!isValidProductId(request.productId))
+        return error("invalid product id");
+    if (!isValidAppBundleName(request.bundleName))
+        return error("invalid app bundle name");
+    if (request.artifactPath.empty())
+        return error("artifact path is required");
+    if (request.artifactSha256.empty())
+        return error("artifact hash is required");
+
+    auto artifact = fs::path(request.artifactPath);
+    std::error_code ec;
+    if (!fs::is_regular_file(artifact, ec))
+        return error("artifact path is not a regular file");
+
+    auto actualHash = Crypto::sha256File(artifact.string());
+    if (actualHash.empty())
+        return error("artifact could not be read");
+    if (actualHash != request.artifactSha256)
+        return error("artifact hash mismatch");
+
+    auto temp = createTemporaryInstallDirectory("eacp-privileged-install");
+    if (temp.empty())
+        return error("failed to create privileged install temp directory");
+
+    auto cleanup = [&]
+    {
+        std::error_code cleanupEc;
+        fs::remove_all(temp, cleanupEc);
+    };
+
+    auto unpack = temp / "unpack";
+    fs::create_directories(unpack, ec);
+    if (ec)
+    {
+        cleanup();
+        return error("failed to create unpack directory");
+    }
+
+    if (!extractArchiveTo(artifact, unpack))
+    {
+        cleanup();
+        return error("failed to unpack artifact");
+    }
+
+    auto unpackedApp = unpack / request.bundleName;
+    if (!fs::is_directory(unpackedApp, ec) || fs::is_symlink(unpackedApp, ec))
+    {
+        cleanup();
+        return error("artifact did not contain expected app bundle");
+    }
+
+    auto installRoot = protectedApplicationsRoot();
+    fs::create_directories(installRoot, ec);
+    if (ec)
+    {
+        cleanup();
+        return error("failed to create install root");
+    }
+
+    auto installPath = installRoot / request.bundleName;
+    auto rollbackPath = installRoot / (request.bundleName + ".rollback");
+
+    fs::remove_all(rollbackPath, ec);
+    if (ec)
+    {
+        cleanup();
+        return error("failed to remove old rollback");
+    }
+
+    if (fs::exists(installPath, ec))
+    {
+        fs::rename(installPath, rollbackPath, ec);
+        if (ec)
+        {
+            cleanup();
+            return error("failed to create rollback");
+        }
+    }
+
+    fs::rename(unpackedApp, installPath, ec);
+    if (ec)
+    {
+        auto copyEc = std::error_code();
+        fs::copy(unpackedApp,
+                 installPath,
+                 fs::copy_options::recursive
+                     | fs::copy_options::overwrite_existing,
+                 copyEc);
+        if (copyEc)
+        {
+            auto restoreEc = std::error_code();
+            fs::remove_all(installPath, restoreEc);
+            restoreEc.clear();
+            if (fs::exists(rollbackPath, restoreEc))
+                fs::rename(rollbackPath, installPath, restoreEc);
+            cleanup();
+            return error("failed to install app");
+        }
+    }
+
+    cleanup();
+    return ok();
+}
 #else
+InstallResult installAppBundleArtifact(
+    const PrivilegedAppBundleInstallRequest& request)
+{
     if (!isValidProductId(request.productId))
         return error("invalid product id");
     if (!isValidAppBundleName(request.bundleName))
@@ -780,8 +932,8 @@ InstallResult installAppBundleArtifact(
 
     cleanup();
     return ok();
-#endif
 }
+#endif
 
 ProductArtifact artifactForPlatform(const Product& product, Platform platform)
 {
