@@ -7,6 +7,7 @@
 #include "PrivilegedHelperClient.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -448,21 +449,7 @@ bool runInstallProcess(std::vector<std::string> args)
 
 bool validBundleName(const std::string& bundleName)
 {
-    constexpr auto suffix = std::string_view(".app");
-    if (bundleName.size() <= suffix.size()
-        || bundleName.compare(bundleName.size() - suffix.size(),
-                              suffix.size(),
-                              suffix) != 0)
-        return false;
-
-    for (auto c: bundleName)
-    {
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != ' '
-            && c != '.' && c != '-' && c != '_')
-            return false;
-    }
-
-    return true;
+    return Updater::isValidAppBundleName(bundleName);
 }
 
 void printUsage()
@@ -648,6 +635,79 @@ int blessHelper()
     return 0;
 }
 
+bool directInstallFallbackEnabled()
+{
+    auto* value = std::getenv("EACP_APPHUB_DIRECT_INSTALL_FALLBACK");
+    return value != nullptr && std::string_view(value) == "1";
+}
+
+int directInstallAppBundle(const fs::path& root,
+                           const Updater::RemoteAppManifest& manifest,
+                           const fs::path& artifactPath)
+{
+    auto unpack = remoteUnpackRoot(root);
+
+    std::error_code ec;
+    fs::remove_all(unpack, ec);
+    fs::create_directories(unpack, ec);
+    if (ec)
+    {
+        std::cout << "Remote install: failed to create unpack directory\n";
+        return 1;
+    }
+
+    if (!runProcess({"/usr/bin/ditto",
+                     "-x",
+                     "-k",
+                     artifactPath.string(),
+                     unpack.string()}))
+    {
+        std::cout << "Remote install: failed to unpack artifact\n";
+        return 1;
+    }
+
+    auto unpackedApp = unpack / manifest.bundleName;
+    if (!fs::is_directory(unpackedApp, ec))
+    {
+        std::cout << "Remote install: artifact did not contain "
+                  << manifest.bundleName << "\n";
+        return 1;
+    }
+
+    auto installPath = fs::path("/Applications") / manifest.bundleName;
+    auto rollbackPath =
+        fs::path("/Applications") / (manifest.bundleName + ".rollback");
+
+    std::cout << "Remote install: dev fallback installing to " << installPath
+              << "\n";
+    if (!runInstallProcess({"/bin/rm", "-rf", rollbackPath.string()}))
+    {
+        std::cout << "Remote install: failed to remove old rollback\n";
+        return 1;
+    }
+
+    if (fs::exists(installPath, ec)
+        && !runInstallProcess({"/bin/mv",
+                               installPath.string(),
+                               rollbackPath.string()}))
+    {
+        std::cout << "Remote install: failed to create rollback\n";
+        return 1;
+    }
+
+    if (!runInstallProcess(
+            {"/bin/mv", unpackedApp.string(), installPath.string()})
+        && !runInstallProcess({"/usr/bin/ditto",
+                               unpackedApp.string(),
+                               installPath.string()}))
+    {
+        std::cout << "Remote install: failed to install app\n";
+        return 1;
+    }
+
+    return 0;
+}
+
 int remoteInstall(const fs::path& root, const std::string& manifestUrl)
 {
     auto effectiveManifestUrl = manifestUrl.empty()
@@ -655,7 +715,6 @@ int remoteInstall(const fs::path& root, const std::string& manifestUrl)
                                     : manifestUrl;
 
     auto downloads = remoteDownloadRoot(root);
-    auto unpack = remoteUnpackRoot(root);
     auto manifestPath = downloads / "manifest.json";
     auto artifactPath = downloads / "artifact.app.zip";
 
@@ -723,61 +782,33 @@ int remoteInstall(const fs::path& root, const std::string& manifestUrl)
         return 1;
     }
 
-    fs::remove_all(unpack, ec);
-    fs::create_directories(unpack, ec);
-    if (ec)
+    if (directInstallFallbackEnabled())
     {
-        std::cout << "Remote install: failed to create unpack directory\n";
-        return 1;
+        std::cout << "Remote install: using explicit direct install fallback\n";
+        return directInstallAppBundle(root, manifest, artifactPath);
     }
 
-    if (!runProcess({"/usr/bin/ditto",
-                     "-x",
-                     "-k",
-                     artifactPath.string(),
-                     unpack.string()}))
-    {
-        std::cout << "Remote install: failed to unpack artifact\n";
-        return 1;
-    }
+    auto request = Updater::PrivilegedAppBundleInstallRequest();
+    request.productId = manifest.productId;
+    request.name = manifest.name;
+    request.version = manifest.version;
+    request.bundleName = manifest.bundleName;
+    request.artifactPath = artifactPath.string();
+    request.artifactSha256 = manifest.artifact.sha256;
 
-    auto unpackedApp = unpack / manifest.bundleName;
-    if (!fs::is_directory(unpackedApp, ec))
+    std::cout << "Remote install: requesting privileged install of "
+              << manifest.bundleName << "\n";
+    auto installResult = AppHub::installAppBundleWithPrivilegedHelper(request);
+    if (!installResult.ok)
     {
-        std::cout << "Remote install: artifact did not contain "
-                  << manifest.bundleName << "\n";
-        return 1;
-    }
-
-    auto installPath = fs::path("/Applications") / manifest.bundleName;
-    auto rollbackPath = fs::path("/Applications") / (manifest.bundleName + ".rollback");
-
-    std::cout << "Remote install: installing to " << installPath << "\n";
-    if (!runInstallProcess({"/bin/rm", "-rf", rollbackPath.string()}))
-    {
-        std::cout << "Remote install: failed to remove old rollback\n";
-        return 1;
-    }
-
-    if (fs::exists(installPath, ec)
-        && !runInstallProcess({"/bin/mv",
-                               installPath.string(),
-                               rollbackPath.string()}))
-    {
-        std::cout << "Remote install: failed to create rollback\n";
-        return 1;
-    }
-
-    if (!runInstallProcess({"/usr/bin/ditto",
-                            unpackedApp.string(),
-                            installPath.string()}))
-    {
-        std::cout << "Remote install: failed to install app\n";
+        std::cout << "Remote install: privileged helper failed: "
+                  << installResult.error << "\n";
         return 1;
     }
 
     auto executable =
-        installPath / "Contents" / "MacOS" / manifest.name;
+        fs::path("/Applications") / manifest.bundleName / "Contents" / "MacOS"
+        / manifest.name;
     std::cout << "Remote install: installed " << manifest.name << " "
               << manifest.version << "\n";
     if (fs::exists(executable, ec))

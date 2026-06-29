@@ -239,6 +239,25 @@ struct RemoteAppManifest
     MIRO_REFLECT(productId, name, version, bundleName, artifact)
 };
 
+struct PrivilegedAppBundleInstallRequest
+{
+    std::string productId;
+    std::string name;
+    std::string version;
+    std::string bundleName;
+    std::string artifactPath;
+    std::string artifactSha256;
+    std::string requiredTeamIdentifier;
+
+    MIRO_REFLECT(productId,
+                 name,
+                 version,
+                 bundleName,
+                 artifactPath,
+                 artifactSha256,
+                 requiredTeamIdentifier)
+};
+
 enum class PlanAction
 {
     Install,
@@ -302,6 +321,7 @@ const ProductReceipt* findReceipt(const Vector<ProductReceipt>& receipts,
 int compareVersions(const std::string& lhs, const std::string& rhs);
 bool isNewerVersion(const std::string& candidate, const std::string& current);
 bool isValidProductId(const std::string& productId);
+bool isValidAppBundleName(const std::string& bundleName);
 
 ProductArtifact artifactForPlatform(const Product& product, Platform platform);
 ProductArtifact artifactForTarget(const Product& product, const Target& target);
@@ -326,6 +346,9 @@ InstallPlan planUpdateAll(const ProductCatalog& catalog,
 InstallPlan planRemove(const std::string& productId);
 
 bool pathIsUnder(const std::string& path, const std::string& root);
+
+InstallResult installAppBundleArtifact(
+    const PrivilegedAppBundleInstallRequest& request);
 
 class MockPrivilegedHelper
 {

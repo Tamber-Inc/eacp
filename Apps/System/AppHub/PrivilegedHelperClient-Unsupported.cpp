@@ -11,4 +11,13 @@ PrivilegedHelperInstallResult installPrivilegedHelper()
     return result;
 }
 
+eacp::Updater::InstallResult installAppBundleWithPrivilegedHelper(
+    const eacp::Updater::PrivilegedAppBundleInstallRequest&)
+{
+    auto result = eacp::Updater::InstallResult();
+    result.ok = false;
+    result.error = "privileged helper installs are only available on macOS";
+    return result;
+}
+
 } // namespace AppHub

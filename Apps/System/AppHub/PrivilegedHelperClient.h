@@ -1,5 +1,7 @@
 #pragma once
 
+#include <eacp/Updater/Updater.h>
+
 #include <string>
 
 namespace AppHub
@@ -12,5 +14,7 @@ struct PrivilegedHelperInstallResult
 };
 
 PrivilegedHelperInstallResult installPrivilegedHelper();
+eacp::Updater::InstallResult installAppBundleWithPrivilegedHelper(
+    const eacp::Updater::PrivilegedAppBundleInstallRequest& request);
 
 } // namespace AppHub

@@ -8,6 +8,10 @@ set(EACP_APPHUB_HELPER_LABEL
     "com.tamber.AppHub.PrivilegedHelper"
     CACHE STRING
     "AppHub privileged helper launchd label")
+set(EACP_APPHUB_ALLOWED_TEAM_ID
+    "MBHR5VAUVQ"
+    CACHE STRING
+    "Apple Developer Team ID allowed for app bundles installed by AppHub helper")
 set(EACP_APPHUB_DEMO_MANIFEST_URL
     "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/manifest.json"
     CACHE STRING
@@ -66,8 +70,10 @@ if (APPLE)
             MACOSX_BUNDLE_SHORT_VERSION_STRING "${EACP_APPHUB_VERSION}"
             MACOSX_BUNDLE_BUNDLE_VERSION "${EACP_APPHUB_VERSION}")
 
-    add_executable(AppHubPrivilegedHelper PrivilegedHelper/Main.cpp)
-    target_link_libraries(AppHubPrivilegedHelper PRIVATE eacp-updater)
+    add_executable(AppHubPrivilegedHelper PrivilegedHelper/Main.mm)
+    target_link_libraries(AppHubPrivilegedHelper PRIVATE
+            eacp-updater
+            "-framework Foundation")
     set_default_target_setting(AppHubPrivilegedHelper)
     set_target_properties(AppHubPrivilegedHelper
         PROPERTIES
@@ -75,7 +81,8 @@ if (APPLE)
             MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/PrivilegedHelperInfo.plist")
     target_compile_definitions(AppHubPrivilegedHelper
         PRIVATE
-            EACP_APPHUB_HELPER_LABEL="${EACP_APPHUB_HELPER_LABEL}")
+            EACP_APPHUB_HELPER_LABEL="${EACP_APPHUB_HELPER_LABEL}"
+            EACP_APPHUB_HELPER_ALLOWED_TEAM_ID="${EACP_APPHUB_ALLOWED_TEAM_ID}")
     target_link_options(AppHubPrivilegedHelper
         PRIVATE
             "-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_BINARY_DIR}/PrivilegedHelperInfo.plist"
