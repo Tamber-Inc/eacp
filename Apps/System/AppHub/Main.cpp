@@ -1,3 +1,5 @@
+#include "App.h"
+
 #include <eacp/Updater/Updater.h>
 
 #include <eacp/Core/Process/Process.h>
@@ -252,12 +254,14 @@ Updater::Product makeProduct(const std::string& id,
                              Updater::PackageKind kind,
                              const std::string& version,
                              const fs::path& artifact,
-                             const eacp::Vector<std::string>& dependencies = {})
+                             const eacp::Vector<std::string>& dependencies = {},
+                             const std::string& bundleName = {})
 {
     auto product = Updater::Product();
     product.id = id;
     product.name = name;
     product.kind = kind;
+    product.bundleName = bundleName;
     product.channel = "stable";
     product.latestVersion = version;
     product.dependencies = dependencies;
@@ -464,7 +468,9 @@ void printUsage()
         << "  AppHub [--root <path>] list\n"
         << "  AppHub [--root <path>] status\n"
         << "  AppHub [--root <path>] install <product-id>\n"
+        << "  AppHub [--root <path>] catalog-install <product-id>\n"
         << "  AppHub [--root <path>] open <product-id>\n"
+        << "  AppHub [--root <path>] catalog-open <product-id>\n"
         << "  AppHub [--root <path>] close <product-id>\n"
         << "  AppHub [--root <path>] publish-update\n"
         << "  AppHub [--root <path>] bless-helper\n"
@@ -1207,7 +1213,7 @@ int main(int argc, char* argv[])
     if (command == "gui")
     {
         guiStateRoot() = options.root;
-        eacp::Apps::run<AppHubGui>(argc, argv);
+        eacp::Apps::run<AppHubUI::AppHubWebApp>(argc, argv);
         return 0;
     }
     if (command == "tui")
@@ -1229,6 +1235,18 @@ int main(int argc, char* argv[])
         }
         return installProduct(options.root, options.productId);
     }
+    if (command == "catalog-install")
+    {
+        if (options.productId.empty())
+        {
+            std::cout << "catalog-install requires a product id\n";
+            return 2;
+        }
+        auto api = Api::AppHubApi(options.root);
+        auto result = api.installProduct({.productId = options.productId});
+        std::cout << result.message << "\n";
+        return result.ok ? 0 : 1;
+    }
     if (command == "open")
     {
         if (options.productId.empty())
@@ -1237,6 +1255,18 @@ int main(int argc, char* argv[])
             return 2;
         }
         return openProduct(options.root, options.productId);
+    }
+    if (command == "catalog-open")
+    {
+        if (options.productId.empty())
+        {
+            std::cout << "catalog-open requires a product id\n";
+            return 2;
+        }
+        auto api = Api::AppHubApi(options.root);
+        auto result = api.openProduct({.productId = options.productId});
+        std::cout << result.message << "\n";
+        return result.ok ? 0 : 1;
     }
     if (command == "close")
     {

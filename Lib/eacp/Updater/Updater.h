@@ -126,6 +126,7 @@ struct ProductT
     std::string id;
     std::string name;
     PackageKind kind = PackageKind::App;
+    std::string bundleName;
     std::string channel = "stable";
     std::string latestVersion;
     Vector<std::string> dependencies;
@@ -134,6 +135,7 @@ struct ProductT
     MIRO_REFLECT(id,
                  name,
                  kind,
+                 bundleName,
                  channel,
                  latestVersion,
                  dependencies,

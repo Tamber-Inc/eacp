@@ -423,12 +423,41 @@ InstallResult executeInstall(const PreparedOperation& op)
     if (ec)
         return error("failed to create install staging");
 
-    fs::copy_file(op.request.artifactPath,
-                  op.installStagingDir / "artifact.bin",
-                  fs::copy_options::overwrite_existing,
-                  ec);
-    if (ec)
-        return error("failed to stage artifact");
+    auto artifactPath = fs::path(op.request.artifactPath);
+    if (artifactPath.extension() == ".zip")
+    {
+#if defined(_WIN32)
+        return error("zip app artifact install is not implemented on Windows yet");
+#else
+        if (!runProcess({"/usr/bin/ditto",
+                         "-x",
+                         "-k",
+                         artifactPath.string(),
+                         op.installStagingDir.string()}))
+        {
+            return error("failed to unpack app artifact");
+        }
+#endif
+    }
+    else if (fs::is_directory(artifactPath, ec))
+    {
+        fs::copy(artifactPath,
+                 op.installStagingDir / artifactPath.filename(),
+                 fs::copy_options::recursive
+                     | fs::copy_options::overwrite_existing,
+                 ec);
+        if (ec)
+            return error("failed to stage directory artifact");
+    }
+    else
+    {
+        fs::copy_file(artifactPath,
+                      op.installStagingDir / "artifact.bin",
+                      fs::copy_options::overwrite_existing,
+                      ec);
+        if (ec)
+            return error("failed to stage artifact");
+    }
 
     fs::remove_all(op.rollbackDir, ec);
     if (fs::exists(op.productDir, ec))

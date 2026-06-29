@@ -20,6 +20,10 @@ set(EACP_APPHUB_MANIFEST_URL
     "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/hub-manifest.json"
     CACHE STRING
     "Default AppHub self-update manifest URL")
+set(EACP_APPHUB_CATALOG_URL
+    "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/apphub-catalog.json"
+    CACHE STRING
+    "Default AppHub remote product catalog URL")
 set(EACP_APPHUB_APP_SIGNING_REQUIREMENT
     "identifier \"${EACP_APPHUB_BUNDLE_ID}\" and anchor apple generic"
     CACHE STRING
@@ -30,13 +34,36 @@ set(EACP_APPHUB_HELPER_SIGNING_REQUIREMENT
     "Code signing requirement for the AppHub privileged helper")
 
 if (APPLE)
-    add_executable(AppHub MACOSX_BUNDLE Main.cpp PrivilegedHelperClient-macOS.mm)
+    set(APPHUB_PLATFORM_SOURCES PrivilegedHelperClient-macOS.mm)
 else ()
-    add_executable(AppHub Main.cpp PrivilegedHelperClient-Unsupported.cpp)
+    set(APPHUB_PLATFORM_SOURCES PrivilegedHelperClient-Unsupported.cpp)
 endif ()
 
-target_link_libraries(AppHub PRIVATE eacp-updater eacp-graphics)
+eacp_add_webview_app(AppHub
+    SOURCES        Main.cpp ${APPHUB_PLATFORM_SOURCES}
+    API            Api::AppHubApi
+    API_HEADER     AppHubApi.h
+    WEB_DIR        ${CMAKE_CURRENT_SOURCE_DIR}/web
+    CATEGORY       AppHubWebApp
+    BUNDLE_ID      ${EACP_APPHUB_BUNDLE_ID}
+    BUNDLE_NAME    "Tamber AppHub"
+    LINK_LIBRARIES eacp-updater eacp-network
+    REACT)
+
+target_sources(AppHub PRIVATE App.h)
+target_link_libraries(AppHub PRIVATE eacp-updater eacp-network)
 eacp_set_gui_subsystem(AppHub)
+
+if (TARGET AppHubSchema_Codegen)
+    target_sources(AppHubSchema_Codegen PRIVATE ${APPHUB_PLATFORM_SOURCES})
+    target_compile_definitions(AppHubSchema_Codegen
+        PRIVATE
+            EACP_APPHUB_VERSION="${EACP_APPHUB_VERSION}"
+            EACP_APPHUB_HELPER_LABEL="${EACP_APPHUB_HELPER_LABEL}"
+            EACP_APPHUB_DEMO_MANIFEST_URL="${EACP_APPHUB_DEMO_MANIFEST_URL}"
+            EACP_APPHUB_MANIFEST_URL="${EACP_APPHUB_MANIFEST_URL}"
+            EACP_APPHUB_CATALOG_URL="${EACP_APPHUB_CATALOG_URL}")
+endif ()
 
 set_default_target_setting(AppHub)
 
@@ -46,6 +73,7 @@ target_compile_definitions(AppHub
         EACP_APPHUB_HELPER_LABEL="${EACP_APPHUB_HELPER_LABEL}"
         EACP_APPHUB_DEMO_MANIFEST_URL="${EACP_APPHUB_DEMO_MANIFEST_URL}"
         EACP_APPHUB_MANIFEST_URL="${EACP_APPHUB_MANIFEST_URL}"
+        EACP_APPHUB_CATALOG_URL="${EACP_APPHUB_CATALOG_URL}"
 )
 
 if (APPLE)

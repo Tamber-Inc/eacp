@@ -139,6 +139,20 @@ jobs:
           test "$installed_version" = "$VERSION"
           echo "Installed remote signed Demo App ${installed_version} from ${manifest_url}"
 
+          "${smoke_root}/AppHub.app/Contents/MacOS/AppHub" \
+            --root "${smoke_root}/hub-state" \
+            catalog-install com.eacp.maze
+          test -d /Applications/Maze.app
+          codesign --verify --strict --verbose=2 /Applications/Maze.app
+
+          "${smoke_root}/AppHub.app/Contents/MacOS/AppHub" \
+            --root "${smoke_root}/hub-state" \
+            catalog-install com.eacp.teapot
+          test -d /Applications/Teapot.app
+          codesign --verify --strict --verbose=2 /Applications/Teapot.app
+
+          echo "Installed remote signed Maze and Teapot from ${RELEASE_BASE_URL}/apphub-catalog.json"
+
       - name: Smoke install AppHub from published internet artifacts
         if: inputs.publish_hub_update == 'true'
         run: |
