@@ -11,6 +11,10 @@ on:
         description: GitHub Release tag for the signed remote demo.
         required: true
         default: remote-demo-v1
+      include_hub:
+        description: Publish a freshly built AppHub artifact as well as the Demo App.
+        required: true
+        default: 'true'
 
 permissions:
   contents: write
@@ -30,16 +34,42 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: 1password/install-cli-action@v2
+      - uses: 1password/install-cli-action@v3
+
+      - name: Capture existing hub artifact hash
+        if: inputs.include_hub != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p dist/remote-signed-demo
+          if gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern AppHub-remote-demo.app.zip \
+            --dir dist/existing-hub >/dev/null 2>&1; then
+            shasum -a 256 dist/existing-hub/AppHub-remote-demo.app.zip \
+              | awk '{print $1}' > dist/remote-signed-demo/apphub-before.sha256
+          else
+            echo "No existing AppHub artifact found for app-only update." >&2
+            exit 1
+          fi
 
       - name: Build signed release assets
+        if: inputs.include_hub == 'true'
         run: >
           op run
           --env-file=.github/op/tamber-signing.env
           --
-          Scripts/package-remote-signed-demo-assets.sh
+          node Scripts/package-remote-signed-demo-assets.mjs
+
+      - name: Build and upload signed Demo App update
+        if: inputs.include_hub != 'true'
+        run: >
+          op run
+          --env-file=.github/op/tamber-signing.env
+          --
+          node Scripts/publish-remote-demo-app-version.mjs
 
       - name: Create or update release
+        if: inputs.include_hub == 'true'
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" dist/remote-signed-demo/* --clobber
@@ -49,6 +79,19 @@ jobs:
               --title "Remote signed demo ${VERSION}" \
               --notes "Signed AppHub and Demo App ${VERSION} remote install smoke artifacts."
           fi
+
+      - name: Verify hub artifact stayed unchanged
+        if: inputs.include_hub != 'true'
+        run: |
+          set -euo pipefail
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern AppHub-remote-demo.app.zip \
+            --dir dist/current-hub
+          current="$(shasum -a 256 dist/current-hub/AppHub-remote-demo.app.zip | awk '{print $1}')"
+          before="$(cat dist/remote-signed-demo/apphub-before.sha256)"
+          test "$current" = "$before"
+          echo "AppHub artifact unchanged: $current"
 
       - name: Smoke install from published internet artifacts
         run: |

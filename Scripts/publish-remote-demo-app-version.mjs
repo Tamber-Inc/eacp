@@ -1,0 +1,87 @@
+#!/usr/bin/env node
+
+import { join } from 'node:path';
+
+import {
+  cleanDir,
+  env,
+  log,
+  repoRoot,
+  requireMacOS,
+  run,
+  sha256File,
+  writeJson,
+} from './lib/cli.mjs';
+import { ensureTamberSigningIdentity, signPath } from './lib/macos-signing.mjs';
+
+const version = env('VERSION', '2.0.0');
+const releaseTag = env('RELEASE_TAG', 'remote-demo-v1');
+const releaseBaseUrl = env(
+  'RELEASE_BASE_URL',
+  `https://github.com/Tamber-Inc/eacp/releases/download/${releaseTag}`,
+);
+const outDir = env('OUT_DIR', join(repoRoot, 'dist', 'remote-demo-app-update'));
+const buildDir = env('BUILD_DIR', join(repoRoot, `build-remote-demo-app-update-${version}`));
+
+const demoAppName = 'Tamber Local Update Demo.app';
+const demoBinaryName = 'Tamber Local Update Demo';
+const demoZip = `TamberLocalUpdateDemo-${version}.app.zip`;
+const productId = 'com.tamber.RealUpdateDemo';
+
+requireMacOS('Remote demo app update publishing');
+
+log('Import Tamber Developer ID signing identity');
+ensureTamberSigningIdentity();
+
+log(`Configure Demo App ${version}`);
+run('cmake', [
+  '-S',
+  repoRoot,
+  '-B',
+  buildDir,
+  '-DCMAKE_BUILD_TYPE=Release',
+  `-DEACP_REAL_UPDATE_DEMO_VERSION=${version}`,
+]);
+
+log(`Build Demo App ${version}`);
+run('cmake', ['--build', buildDir, '--target', 'RealUpdateDemo']);
+
+const demoApp = join(buildDir, 'Apps', 'System', 'RealUpdateDemo', demoAppName);
+
+log(`Sign Demo App ${version}`);
+signPath(demoApp);
+
+log('Verify Demo App version');
+run(join(demoApp, 'Contents', 'MacOS', demoBinaryName), ['--version']);
+
+log(`Package Demo App ${version}`);
+cleanDir(outDir);
+run('ditto', ['-c', '-k', '--keepParent', demoApp, join(outDir, demoZip)]);
+
+const demoSha = sha256File(join(outDir, demoZip));
+const manifest = {
+  productId,
+  name: 'Tamber Local Update Demo',
+  version,
+  bundleName: demoAppName,
+  artifact: {
+    url: `${releaseBaseUrl}/${demoZip}`,
+    sha256: demoSha,
+  },
+};
+writeJson(join(outDir, 'manifest.json'), manifest);
+
+log('Update release manifest and app artifact');
+run('gh', [
+  'release',
+  'upload',
+  releaseTag,
+  join(outDir, demoZip),
+  join(outDir, 'manifest.json'),
+  '--repo',
+  'Tamber-Inc/eacp',
+  '--clobber',
+]);
+
+log(`Published Demo App ${version}`);
+console.log(JSON.stringify(manifest, null, 2));
