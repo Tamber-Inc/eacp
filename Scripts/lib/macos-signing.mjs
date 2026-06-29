@@ -23,11 +23,7 @@ const keychainPassword = 'tamber-eacp-remote-demo-local';
 export function ensureTamberSigningIdentity(keychainPath = remoteDemoKeychainPath) {
   requireMacOS('Tamber Developer ID signing');
   requireEnv(
-    [
-      'APPLE_SIGNING_IDENTITY',
-      'APPLE_DEVELOPER_CERTIFICATE_BASE64',
-      'APPLE_DEVELOPER_CERTIFICATE_PASSWORD',
-    ],
+    ['APPLE_SIGNING_IDENTITY'],
     'Tamber Developer ID signing',
   );
 
@@ -40,6 +36,11 @@ export function ensureTamberSigningIdentity(keychainPath = remoteDemoKeychainPat
   ensureKeychainSearchList(keychainPath);
 
   if (!hasSigningIdentity(keychainPath)) {
+    requireEnv(
+      ['APPLE_DEVELOPER_CERTIFICATE_BASE64', 'APPLE_DEVELOPER_CERTIFICATE_PASSWORD'],
+      'Tamber Developer ID certificate import',
+    );
+
     const tempDir = mkdtempSync(join(tmpdir(), 'eacp-codesign-'));
     const p12 = join(tempDir, 'cert.p12');
     try {
