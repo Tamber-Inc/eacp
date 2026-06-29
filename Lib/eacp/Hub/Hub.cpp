@@ -6,6 +6,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <Miro/Miro.h>
 #include <thread>
 
 namespace eacp::Hub
@@ -49,17 +50,54 @@ std::optional<Updater::ProductCatalog> parseCatalog(const std::string& raw)
     }
 }
 
-std::string replaceAll(std::string text,
-                       const std::string& token,
-                       const std::string& replacement)
+std::optional<ChannelIndex> parseChannelIndex(const std::string& raw)
 {
-    auto pos = std::string::size_type {};
-    while ((pos = text.find(token, pos)) != std::string::npos)
+    if (raw.empty())
+        return std::nullopt;
+
+    auto index = ChannelIndex();
+    try
     {
-        text.replace(pos, token.size(), replacement);
-        pos += replacement.size();
+        Miro::fromJSONString(index, raw);
     }
-    return text;
+    catch (...)
+    {
+        return std::nullopt;
+    }
+
+    auto out = ChannelIndex();
+    out.defaultChannel = normalizedChannel(index.defaultChannel);
+    for (auto channel: index.channels)
+    {
+        channel.id = normalizedChannel(channel.id);
+        if (channel.name.empty())
+            channel.name = channel.id;
+        channel.isDefault =
+            channel.isDefault || channel.id == out.defaultChannel;
+        if (!channel.id.empty())
+            out.channels.add(std::move(channel));
+    }
+
+    if (out.channels.empty())
+        return std::nullopt;
+
+    auto hasDefault = false;
+    for (const auto& channel: out.channels)
+    {
+        if (channel.id == out.defaultChannel || channel.isDefault)
+        {
+            hasDefault = true;
+            break;
+        }
+    }
+
+    if (!hasDefault)
+    {
+        out.defaultChannel = out.channels.front().id;
+        out.channels.front().isDefault = true;
+    }
+
+    return out;
 }
 
 std::string safeChannelPathName(const std::string& channel)
@@ -102,6 +140,11 @@ fs::path cachedCatalogPath(const fs::path& stateRoot)
     return remoteDownloadRoot(stateRoot) / "apphub-catalog.json";
 }
 
+fs::path cachedChannelIndexPath(const fs::path& stateRoot)
+{
+    return remoteDownloadRoot(stateRoot) / "index.json";
+}
+
 fs::path cachedCatalogPath(const fs::path& stateRoot, const std::string& channel)
 {
     auto normalized = normalizedChannel(channel);
@@ -122,38 +165,78 @@ std::string normalizedChannel(std::string channel)
     return channel.empty() ? "stable" : channel;
 }
 
-std::string channelReleaseTag(const CatalogConfig& config)
+std::optional<ChannelIndex> loadChannelIndexFromPath(const fs::path& path)
 {
-    auto channel = normalizedChannel(config.channel);
-    if (channel == "stable")
-        return "stable";
-    return config.channelReleaseTagPrefix + safeChannelPathName(channel);
+    if (path.empty())
+        return std::nullopt;
+
+    return parseChannelIndex(readFile(path));
+}
+
+std::optional<ChannelIndex> fetchChannelIndex(const CatalogConfig& config)
+{
+    if (config.channelIndexUrl.empty())
+        return std::nullopt;
+
+    auto response = HTTP::Request(config.channelIndexUrl).perform();
+    if (response.statusCode < 200 || response.statusCode >= 300)
+        return std::nullopt;
+
+    auto index = parseChannelIndex(response.content);
+    if (!index)
+        return std::nullopt;
+
+    writeFile(cachedChannelIndexPath(config.stateRoot), response.content);
+    return index;
+}
+
+eacp::Vector<ChannelInfo> availableChannels(const CatalogConfig& config)
+{
+    if (auto remote = fetchChannelIndex(config))
+        return remote->channels;
+
+    if (auto cached = loadChannelIndexFromPath(
+            cachedChannelIndexPath(config.stateRoot)))
+    {
+        return cached->channels;
+    }
+
+    return {};
 }
 
 std::string resolvedCatalogUrl(const CatalogConfig& config)
 {
     auto channel = normalizedChannel(config.channel);
-    if (channel == "stable")
-        return config.remoteCatalogUrl;
-
-    auto releaseTag = channelReleaseTag(config);
-    if (!config.channelCatalogUrlTemplate.empty())
+    if (auto remote = fetchChannelIndex(config))
     {
-        auto url = replaceAll(config.channelCatalogUrlTemplate,
-                             "{channel}",
-                             safeChannelPathName(channel));
-        url = replaceAll(url, "{releaseTag}", releaseTag);
-        url = replaceAll(url, "{asset}", config.channelCatalogAssetName);
-        return url;
+        for (const auto& entry: remote->channels)
+        {
+            if (entry.id == channel && !entry.catalogUrl.empty())
+                return entry.catalogUrl;
+        }
+        for (const auto& entry: remote->channels)
+        {
+            if (entry.isDefault && !entry.catalogUrl.empty())
+                return entry.catalogUrl;
+        }
     }
 
-    if (config.channelReleaseBaseUrl.empty())
-        return {};
+    if (auto cached = loadChannelIndexFromPath(
+            cachedChannelIndexPath(config.stateRoot)))
+    {
+        for (const auto& entry: cached->channels)
+        {
+            if (entry.id == channel && !entry.catalogUrl.empty())
+                return entry.catalogUrl;
+        }
+        for (const auto& entry: cached->channels)
+        {
+            if (entry.isDefault && !entry.catalogUrl.empty())
+                return entry.catalogUrl;
+        }
+    }
 
-    auto base = config.channelReleaseBaseUrl;
-    while (!base.empty() && base.back() == '/')
-        base.pop_back();
-    return base + "/" + releaseTag + "/" + config.channelCatalogAssetName;
+    return {};
 }
 
 std::optional<Updater::ProductCatalog> loadCatalogFromPath(const fs::path& path)

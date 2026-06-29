@@ -44,30 +44,17 @@
     "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/hub-manifest.json"
 #endif
 
-#ifndef EACP_APPHUB_CATALOG_URL
-#define EACP_APPHUB_CATALOG_URL \
-    "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/apphub-catalog.json"
-#endif
-
 #ifndef EACP_APPHUB_CHANNEL
 #define EACP_APPHUB_CHANNEL "stable"
 #endif
 
-#ifndef EACP_APPHUB_CHANNEL_RELEASE_BASE_URL
-#define EACP_APPHUB_CHANNEL_RELEASE_BASE_URL \
-    "https://github.com/Tamber-Inc/eacp/releases/download"
-#endif
-
-#ifndef EACP_APPHUB_CHANNEL_RELEASE_TAG_PREFIX
-#define EACP_APPHUB_CHANNEL_RELEASE_TAG_PREFIX "apphub-channel-"
+#ifndef EACP_APPHUB_CHANNEL_INDEX_URL
+#define EACP_APPHUB_CHANNEL_INDEX_URL \
+    "https://storage.googleapis.com/tamber-artifacts/jamie-updater-demo/index.json"
 #endif
 
 #ifndef EACP_APPHUB_MANUAL_CATALOG_PATH
 #define EACP_APPHUB_MANUAL_CATALOG_PATH ""
-#endif
-
-#ifndef EACP_APPHUB_DEV_CATALOG_PATH
-#define EACP_APPHUB_DEV_CATALOG_PATH EACP_APPHUB_MANUAL_CATALOG_PATH
 #endif
 
 namespace Api
@@ -185,12 +172,23 @@ struct HubOperation
                  totalBytes)
 };
 
+struct HubChannel
+{
+    std::string id;
+    std::string name;
+    std::string catalogUrl;
+    bool isDefault = false;
+
+    MIRO_REFLECT(id, name, catalogUrl, isDefault)
+};
+
 struct HubState
 {
     std::string hubVersion = EACP_APPHUB_VERSION;
     std::string root;
     std::string channel = EACP_APPHUB_CHANNEL;
     std::string catalogUrl;
+    eacp::Vector<HubChannel> channels;
     int catalogVersion = 0;
     HubHelperState helperState = HubHelperState::Unknown;
     eacp::Vector<HubProduct> products;
@@ -202,6 +200,7 @@ struct HubState
                  root,
                  channel,
                  catalogUrl,
+                 channels,
                  catalogVersion,
                  helperState,
                  products,
@@ -247,14 +246,9 @@ constexpr std::string_view runtimeId = "shared.onnxruntime";
 constexpr std::string_view modelId = "shared.clap";
 constexpr std::string_view defaultDemoManifestUrl = EACP_APPHUB_DEMO_MANIFEST_URL;
 constexpr std::string_view defaultHubManifestUrl = EACP_APPHUB_MANIFEST_URL;
-constexpr std::string_view defaultCatalogUrl = EACP_APPHUB_CATALOG_URL;
 constexpr std::string_view defaultChannel = EACP_APPHUB_CHANNEL;
-constexpr std::string_view defaultChannelReleaseBaseUrl =
-    EACP_APPHUB_CHANNEL_RELEASE_BASE_URL;
-constexpr std::string_view defaultChannelReleaseTagPrefix =
-    EACP_APPHUB_CHANNEL_RELEASE_TAG_PREFIX;
+constexpr std::string_view defaultChannelIndexUrl = EACP_APPHUB_CHANNEL_INDEX_URL;
 constexpr std::string_view manualCatalogPath = EACP_APPHUB_MANUAL_CATALOG_PATH;
-constexpr std::string_view legacyDevCatalogPath = EACP_APPHUB_DEV_CATALOG_PATH;
 
 inline bool helperErrorNeedsRepair(const std::string& message)
 {
@@ -270,14 +264,17 @@ inline std::string selectedManualCatalogPath()
     {
         return overridePath;
     }
-    if (auto* legacyOverridePath = std::getenv("EACP_APPHUB_DEV_CATALOG_PATH");
-        legacyOverridePath != nullptr)
+    return std::string(manualCatalogPath);
+}
+
+inline std::string selectedChannelIndexUrl()
+{
+    if (auto* overrideUrl = std::getenv("EACP_APPHUB_CHANNEL_INDEX_URL");
+        overrideUrl != nullptr)
     {
-        return legacyOverridePath;
+        return overrideUrl;
     }
-    if (!manualCatalogPath.empty())
-        return std::string(manualCatalogPath);
-    return std::string(legacyDevCatalogPath);
+    return std::string(defaultChannelIndexUrl);
 }
 
 inline bool hasManualCatalog()
@@ -547,11 +544,56 @@ inline Hub::CatalogConfig catalogConfig(const fs::path& root)
     return {.stateRoot = root,
             .manualCatalogPath = fs::path(selectedManualCatalogPath()),
             .channel = selectedChannel(root),
-            .remoteCatalogUrl = std::string(defaultCatalogUrl),
-            .channelReleaseBaseUrl = std::string(defaultChannelReleaseBaseUrl),
-            .channelReleaseTagPrefix =
-                std::string(defaultChannelReleaseTagPrefix),
-            .channelCatalogAssetName = "apphub-catalog.json"};
+            .channelIndexUrl = selectedChannelIndexUrl()};
+}
+
+inline eacp::Vector<HubChannel> availableChannels(const fs::path& root)
+{
+    auto out = eacp::Vector<HubChannel>();
+    for (const auto& channel: Hub::availableChannels(catalogConfig(root)))
+    {
+        out.add({.id = channel.id,
+                 .name = channel.name,
+                 .catalogUrl = channel.catalogUrl,
+                 .isDefault = channel.isDefault});
+    }
+    return out;
+}
+
+inline bool isKnownChannel(const fs::path& root, const std::string& channel)
+{
+    auto channels = Hub::availableChannels(catalogConfig(root));
+    for (const auto& known: channels)
+    {
+        if (known.id == channel)
+            return true;
+    }
+    return false;
+}
+
+inline void reconcileSelectedChannel(const fs::path& root)
+{
+    auto selected = selectedChannel(root);
+    auto channels = Hub::availableChannels(catalogConfig(root));
+    if (channels.empty())
+        return;
+
+    for (const auto& known: channels)
+    {
+        if (known.id == selected)
+            return;
+    }
+
+    for (const auto& known: channels)
+    {
+        if (known.isDefault)
+        {
+            writeSelectedChannel(root, known.id);
+            return;
+        }
+    }
+
+    writeSelectedChannel(root, channels.front().id);
 }
 
 inline Updater::MockPrivilegedHelper makeMockHelper(const fs::path& root)
@@ -707,8 +749,8 @@ public:
     CommandResult setChannel(const ChannelRequest& request)
     {
         auto channel = Hub::normalizedChannel(request.channel);
-        if (channel.empty())
-            channel = "stable";
+        if (!Detail::isKnownChannel(root, channel))
+            return fail("Unknown channel: " + channel);
 
         beginOperation(HubOperationKind::Checking,
                        "Switching channel",
@@ -1368,6 +1410,7 @@ private:
 
     void refreshState(const std::string& detail, bool preferRemote = false)
     {
+        Detail::reconcileSelectedChannel(root);
         auto catalog = Detail::loadCatalog(root, preferRemote);
         auto helper = Detail::makeMockHelper(root);
         auto receipts = helper.receipts();
@@ -1381,6 +1424,7 @@ private:
         next.hubVersion = EACP_APPHUB_VERSION;
         next.root = root.string();
         next.channel = Detail::selectedChannel(root);
+        next.channels = Detail::availableChannels(root);
         next.catalogUrl = Hub::resolvedCatalogUrl(Detail::catalogConfig(root));
         next.catalogVersion = catalog.catalogVersion;
         next.helperState = helperState;

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { backend } from './generated/backend';
 import { useHubState } from './generated/hooks';
 import type {
@@ -62,7 +62,13 @@ const helperStateDetails: Record<HubHelperState, string> = {
 export default function App()
 {
     const state = useHubState();
-    const [channel, setChannel] = useState('');
+    const [selectedChannel, setSelectedChannel] = useState(state.channel);
+    useEffect(() => {
+        if (state.channel)
+            setSelectedChannel(state.channel);
+    }, [state.channel]);
+    const channelOptions = state.channels;
+    const hasChannels = channelOptions.length > 0;
     const apps = useMemo(
         () => state.products.filter((product) => product.kind === 'App'),
         [state.products],
@@ -84,16 +90,26 @@ export default function App()
                         className="channel-form"
                         onSubmit={(event) => {
                             event.preventDefault();
-                            void backend.setChannel({ channel: channel || state.channel });
+                            if (selectedChannel)
+                                void backend.setChannel({ channel: selectedChannel });
                         }}
                     >
-                        <input
+                        <select
                             aria-label="Channel"
-                            placeholder={state.channel || 'stable'}
-                            value={channel}
-                            onChange={(event) => setChannel(event.target.value)}
-                        />
-                        <button type="submit">Switch</button>
+                            value={selectedChannel}
+                            onChange={(event) => setSelectedChannel(event.target.value)}
+                            disabled={!hasChannels}
+                        >
+                            {hasChannels
+                                ? null
+                                : <option value={state.channel}>{state.channel || 'No channels'}</option>}
+                            {channelOptions.map((channel) => (
+                                <option key={channel.id} value={channel.id}>
+                                    {channel.name || channel.id}
+                                </option>
+                            ))}
+                        </select>
+                        <button type="submit" disabled={!hasChannels}>Switch</button>
                     </form>
                     <button type="button" onClick={() => void backend.refresh()}>
                         Refresh

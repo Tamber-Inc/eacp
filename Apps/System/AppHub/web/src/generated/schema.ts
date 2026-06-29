@@ -1,3 +1,10 @@
+export interface HubChannel {
+    id: string;
+    name: string;
+    catalogUrl: string;
+    isDefault: boolean;
+}
+
 export type HubHelperState = "Unknown" | "Installed" | "Missing" | "Failed";
 
 export type HubProductKind = "App" | "Runtime" | "Model" | "Blob";
@@ -46,6 +53,7 @@ export interface HubState {
     root: string;
     channel: string;
     catalogUrl: string;
+    channels: HubChannel[];
     catalogVersion: number;
     helperState: HubHelperState;
     products: HubProduct[];

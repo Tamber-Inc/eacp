@@ -31,7 +31,8 @@ button
     cursor: pointer;
 }
 
-input
+input,
+select
 {
     width: 210px;
     min-height: 34px;
@@ -44,7 +45,13 @@ input
     font-size: 13px;
 }
 
-input:focus
+select
+{
+    width: 150px;
+}
+
+input:focus,
+select:focus
 {
     outline: 1px solid #4a9188;
     border-color: #4a9188;

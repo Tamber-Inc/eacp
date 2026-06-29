@@ -449,6 +449,10 @@ auto tSetChannelPersistsSelectedChannel =
 {
     auto root = testRoot("set-channel");
     writeCatalog(root);
+    writeFile(eacp::Hub::cachedChannelIndexPath(root),
+              R"({"defaultChannel":"stable","channels":[{"id":"stable","name":"Stable","catalogUrl":"https://example.test/channels/stable/apphub-catalog.json","isDefault":true},{"id":"jp/feat/some-random-branch","name":"JP Branch","catalogUrl":"https://example.test/channels/jp-feat-some-random-branch/apphub-catalog.json"}]})");
+    auto indexOverride = ScopedEnvironmentVariable("EACP_APPHUB_CHANNEL_INDEX_URL",
+                                                   "");
 
     auto api = Api::AppHubApi(root);
     auto result = api.setChannel({.channel = "jp/feat/some-random-branch"});
@@ -456,9 +460,10 @@ auto tSetChannelPersistsSelectedChannel =
 
     check(result.ok);
     check(state.channel == "jp/feat/some-random-branch");
+    check(state.channels.size() == 2);
     check(state.catalogUrl
-          == "https://github.com/Tamber-Inc/eacp/releases/download/"
-             "apphub-channel-jp-feat-some-random-branch/apphub-catalog.json");
+          == "https://example.test/channels/"
+             "jp-feat-some-random-branch/apphub-catalog.json");
 
     auto reloaded = Api::AppHubApi(root);
     check(reloaded.getHubState().channel == "jp/feat/some-random-branch");

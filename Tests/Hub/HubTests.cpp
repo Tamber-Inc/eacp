@@ -88,7 +88,7 @@ auto tManualCatalogWinsOverFallback =
                                   artifact));
 
     auto loaded = Hub::loadCatalog(
-        {.stateRoot = root, .manualCatalogPath = manualPath, .remoteCatalogUrl = {}},
+        {.stateRoot = root, .manualCatalogPath = manualPath},
         {},
         [&] { return fallback; });
 
@@ -133,7 +133,7 @@ auto tManualCatalogCanDriveModelOnlyUpdatePlan =
     receipts.add(receipt);
 
     auto loaded = Hub::loadCatalogContaining(
-        {.stateRoot = root, .manualCatalogPath = manualPath, .remoteCatalogUrl = {}},
+        {.stateRoot = root, .manualCatalogPath = manualPath},
         "shared.clap",
         [] { return Updater::ProductCatalog(); });
 
@@ -154,31 +154,37 @@ auto tManualCatalogCanDriveModelOnlyUpdatePlan =
     }
 };
 
-auto tStableChannelUsesLegacyCatalogUrl =
-    test("Hub/stableChannelUsesLegacyCatalogUrl") = []
+auto tStableChannelUsesIndexCatalogUrl =
+    test("Hub/stableChannelUsesIndexCatalogUrl") = []
 {
-    auto config = Hub::CatalogConfig();
-    config.channel = "stable";
-    config.remoteCatalogUrl =
-        "https://example.test/releases/download/remote-demo-v1/apphub-catalog.json";
-    config.channelReleaseBaseUrl = "https://example.test/releases/download";
+    auto root = testRoot("stable-index");
+    writeFile(Hub::cachedChannelIndexPath(root),
+              R"({"defaultChannel":"stable","channels":[{"id":"stable","name":"Stable","catalogUrl":"https://example.test/channels/stable/apphub-catalog.json","isDefault":true},{"id":"develop","name":"Develop","catalogUrl":"https://example.test/channels/develop/apphub-catalog.json"}]})");
 
-    check(Hub::channelReleaseTag(config) == "stable");
-    check(Hub::resolvedCatalogUrl(config) == config.remoteCatalogUrl);
+    auto config = Hub::CatalogConfig();
+    config.stateRoot = root;
+    config.channel = "stable";
+
+    auto channels = Hub::availableChannels(config);
+    check(channels.size() == 2);
+    check(Hub::resolvedCatalogUrl(config)
+          == "https://example.test/channels/stable/apphub-catalog.json");
 };
 
-auto tBranchChannelMapsToSafeReleaseTag =
-    test("Hub/branchChannelMapsToSafeReleaseTag") = []
+auto tBranchChannelUsesIndexCatalogUrl =
+    test("Hub/branchChannelUsesIndexCatalogUrl") = []
 {
-    auto config = Hub::CatalogConfig();
-    config.channel = "jp/feat/some-random-branch";
-    config.channelReleaseBaseUrl = "https://example.test/releases/download";
+    auto root = testRoot("branch-index");
+    writeFile(Hub::cachedChannelIndexPath(root),
+              R"({"defaultChannel":"stable","channels":[{"id":"stable","catalogUrl":"https://example.test/channels/stable/apphub-catalog.json","isDefault":true},{"id":"jp/feat/some-random-branch","name":"JP Branch","catalogUrl":"https://example.test/channels/jp-feat-some-random-branch/apphub-catalog.json"}]})");
 
-    check(Hub::channelReleaseTag(config)
-          == "apphub-channel-jp-feat-some-random-branch");
+    auto config = Hub::CatalogConfig();
+    config.stateRoot = root;
+    config.channel = "jp/feat/some-random-branch";
+
     check(Hub::resolvedCatalogUrl(config)
-          == "https://example.test/releases/download/"
-             "apphub-channel-jp-feat-some-random-branch/apphub-catalog.json");
+          == "https://example.test/channels/"
+             "jp-feat-some-random-branch/apphub-catalog.json");
 };
 
 auto tDevelopChannelHasIndependentCache =

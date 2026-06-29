@@ -20,30 +20,18 @@ set(EACP_APPHUB_MANIFEST_URL
     "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/hub-manifest.json"
     CACHE STRING
     "Default AppHub self-update manifest URL")
-set(EACP_APPHUB_CATALOG_URL
-    "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/apphub-catalog.json"
-    CACHE STRING
-    "Default AppHub remote product catalog URL")
-set(EACP_APPHUB_DEV_CATALOG_PATH
-    ""
-    CACHE STRING
-    "Legacy alias for EACP_APPHUB_MANUAL_CATALOG_PATH")
 set(EACP_APPHUB_MANUAL_CATALOG_PATH
-    "${EACP_APPHUB_DEV_CATALOG_PATH}"
+    ""
     CACHE STRING
     "Optional AppHub manual product catalog path; overrides remote catalog fetches")
 set(EACP_APPHUB_CHANNEL
     "stable"
     CACHE STRING
     "Default AppHub update/catalog channel")
-set(EACP_APPHUB_CHANNEL_RELEASE_BASE_URL
-    "https://github.com/Tamber-Inc/eacp/releases/download"
+set(EACP_APPHUB_CHANNEL_INDEX_URL
+    "https://storage.googleapis.com/tamber-artifacts/jamie-updater-demo/index.json"
     CACHE STRING
-    "Base URL for AppHub channel releases")
-set(EACP_APPHUB_CHANNEL_RELEASE_TAG_PREFIX
-    "apphub-channel-"
-    CACHE STRING
-    "Release tag prefix for non-stable AppHub channels")
+    "AppHub channel index URL")
 set(EACP_APPHUB_APP_SIGNING_REQUIREMENT
     "identifier \"${EACP_APPHUB_BUNDLE_ID}\" and anchor apple generic"
     CACHE STRING
@@ -91,19 +79,12 @@ if (TARGET AppHubSchema_Codegen)
             EACP_APPHUB_HELPER_LABEL="${EACP_APPHUB_HELPER_LABEL}"
             EACP_APPHUB_DEMO_MANIFEST_URL="${EACP_APPHUB_DEMO_MANIFEST_URL}"
             EACP_APPHUB_MANIFEST_URL="${EACP_APPHUB_MANIFEST_URL}"
-            EACP_APPHUB_CATALOG_URL="${EACP_APPHUB_CATALOG_URL}"
             EACP_APPHUB_CHANNEL="${EACP_APPHUB_CHANNEL}"
-            EACP_APPHUB_CHANNEL_RELEASE_BASE_URL="${EACP_APPHUB_CHANNEL_RELEASE_BASE_URL}"
-            EACP_APPHUB_CHANNEL_RELEASE_TAG_PREFIX="${EACP_APPHUB_CHANNEL_RELEASE_TAG_PREFIX}")
+            EACP_APPHUB_CHANNEL_INDEX_URL="${EACP_APPHUB_CHANNEL_INDEX_URL}")
     if (EACP_APPHUB_MANUAL_CATALOG_PATH)
         target_compile_definitions(AppHubSchema_Codegen
             PRIVATE
                 EACP_APPHUB_MANUAL_CATALOG_PATH="${EACP_APPHUB_MANUAL_CATALOG_PATH}")
-    endif ()
-    if (EACP_APPHUB_DEV_CATALOG_PATH)
-        target_compile_definitions(AppHubSchema_Codegen
-            PRIVATE
-                EACP_APPHUB_DEV_CATALOG_PATH="${EACP_APPHUB_DEV_CATALOG_PATH}")
     endif ()
 endif ()
 
@@ -115,10 +96,8 @@ target_compile_definitions(AppHub
         EACP_APPHUB_HELPER_LABEL="${EACP_APPHUB_HELPER_LABEL}"
         EACP_APPHUB_DEMO_MANIFEST_URL="${EACP_APPHUB_DEMO_MANIFEST_URL}"
         EACP_APPHUB_MANIFEST_URL="${EACP_APPHUB_MANIFEST_URL}"
-        EACP_APPHUB_CATALOG_URL="${EACP_APPHUB_CATALOG_URL}"
         EACP_APPHUB_CHANNEL="${EACP_APPHUB_CHANNEL}"
-        EACP_APPHUB_CHANNEL_RELEASE_BASE_URL="${EACP_APPHUB_CHANNEL_RELEASE_BASE_URL}"
-        EACP_APPHUB_CHANNEL_RELEASE_TAG_PREFIX="${EACP_APPHUB_CHANNEL_RELEASE_TAG_PREFIX}"
+        EACP_APPHUB_CHANNEL_INDEX_URL="${EACP_APPHUB_CHANNEL_INDEX_URL}"
 )
 
 if (EACP_APPHUB_MANUAL_CATALOG_PATH)
@@ -126,12 +105,6 @@ if (EACP_APPHUB_MANUAL_CATALOG_PATH)
         PRIVATE
             EACP_APPHUB_MANUAL_CATALOG_PATH="${EACP_APPHUB_MANUAL_CATALOG_PATH}")
 endif ()
-if (EACP_APPHUB_DEV_CATALOG_PATH)
-    target_compile_definitions(AppHub
-        PRIVATE
-            EACP_APPHUB_DEV_CATALOG_PATH="${EACP_APPHUB_DEV_CATALOG_PATH}")
-endif ()
-
 if (APPLE)
     configure_file(
         "${CMAKE_CURRENT_SOURCE_DIR}/AppHubInfo.plist.in"
