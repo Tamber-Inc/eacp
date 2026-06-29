@@ -1,7 +1,9 @@
 #pragma once
 
+#include "AppHubPlatform.h"
 #include "PrivilegedHelperClient.h"
 
+#include <eacp/Core/App/App.h>
 #include <eacp/Core/Process/Process.h>
 #include <eacp/Core/Threads/EventLoop.h>
 #include <eacp/Core/Utils/Containers.h>
@@ -11,10 +13,10 @@
 
 #include <Miro/Miro.h>
 
-#include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cstdint>
-#include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -24,10 +26,6 @@
 #include <string>
 #include <string_view>
 #include <thread>
-
-#if defined(__APPLE__)
-#include <mach-o/dyld.h>
-#endif
 
 #ifndef EACP_APPHUB_VERSION
 #define EACP_APPHUB_VERSION "0.0.0"
@@ -52,7 +50,6 @@ namespace Api
 {
 namespace fs = std::filesystem;
 namespace HTTP = eacp::HTTP;
-namespace Processes = eacp::Processes;
 namespace Updater = eacp::Updater;
 
 enum class HubProductKind
@@ -208,8 +205,6 @@ struct CommandResult
 
 namespace Detail
 {
-constexpr auto platform = Updater::Platform::MacOS;
-constexpr auto architecture = Updater::Architecture::Universal;
 constexpr std::string_view mazeId = "com.eacp.maze";
 constexpr std::string_view teapotId = "com.eacp.teapot";
 constexpr std::string_view runtimeId = "shared.onnxruntime";
@@ -217,23 +212,10 @@ constexpr std::string_view modelId = "shared.clap";
 constexpr std::string_view defaultDemoManifestUrl = EACP_APPHUB_DEMO_MANIFEST_URL;
 constexpr std::string_view defaultHubManifestUrl = EACP_APPHUB_MANIFEST_URL;
 constexpr std::string_view defaultCatalogUrl = EACP_APPHUB_CATALOG_URL;
-constexpr std::string_view installedDemoApp =
-    "/Applications/Tamber Local Update Demo.app";
-constexpr std::string_view installedDemoExecutable =
-    "/Applications/Tamber Local Update Demo.app/Contents/MacOS/"
-    "Tamber Local Update Demo";
-constexpr std::string_view installedHubApp = "/Applications/AppHub.app";
-constexpr std::string_view installedHubExecutable =
-    "/Applications/AppHub.app/Contents/MacOS/AppHub";
 
 inline fs::path defaultRoot()
 {
-#if defined(__APPLE__)
-    if (auto* home = std::getenv("HOME"))
-        return fs::path(home) / "Library" / "Application Support" / "Tamber"
-               / "AppHub";
-#endif
-    return fs::temp_directory_path() / "eacp-apphub-gui";
+    return AppHub::defaultStateRoot();
 }
 
 inline fs::path catalogPath(const fs::path& root)
@@ -286,10 +268,7 @@ inline std::string readFile(const fs::path& path)
 
 inline Updater::Target makeTarget()
 {
-    auto target = Updater::Target();
-    target.platform = platform;
-    target.architecture = architecture;
-    return target;
+    return AppHub::currentTarget();
 }
 
 inline Updater::MockHelperOptions makeHelperOptions(const fs::path& root)
@@ -307,18 +286,7 @@ inline fs::path artifactPath(const fs::path& root, std::string_view productId)
 
 inline std::optional<fs::path> currentExecutablePath()
 {
-#if defined(__APPLE__)
-    auto size = std::uint32_t {};
-    _NSGetExecutablePath(nullptr, &size);
-    auto buffer = std::string(size, '\0');
-    if (_NSGetExecutablePath(buffer.data(), &size) != 0)
-        return std::nullopt;
-    buffer.resize(std::strlen(buffer.c_str()));
-    std::error_code ec;
-    return fs::weakly_canonical(buffer, ec);
-#else
-    return std::nullopt;
-#endif
+    return AppHub::currentExecutablePath();
 }
 
 inline std::optional<fs::path> findBuildAppsRoot()
@@ -359,29 +327,15 @@ inline std::optional<fs::path> builtDemoBundle(std::string_view productId)
 
 inline bool createAppBundleZip(const fs::path& bundle, const fs::path& output)
 {
-    std::error_code ec;
-    fs::create_directories(output.parent_path(), ec);
-    fs::remove(output, ec);
-
-#if defined(_WIN32)
-    return false;
-#else
-    auto result = Processes::run("/usr/bin/ditto",
-                                 {"-c",
-                                  "-k",
-                                  "--sequesterRsrc",
-                                  "--keepParent",
-                                  bundle.string(),
-                                  output.string()});
-    return result.exited && result.exitCode == 0;
-#endif
+    return AppHub::createAppBundleZip(bundle, output);
 }
 
 inline Updater::ProductArtifact makeArtifact(const fs::path& artifact)
 {
     auto out = Updater::ProductArtifact();
-    out.platform = platform;
-    out.architecture = architecture;
+    auto target = makeTarget();
+    out.platform = target.platform;
+    out.architecture = target.architecture;
     out.url = "file://" + artifact.string();
     out.sha256 = eacp::Crypto::sha256File(artifact.string());
     out.signature = "dev-signature-placeholder";
@@ -513,7 +467,7 @@ inline std::string executableVersion(std::string_view executable)
     if (!fs::exists(fs::path(executable), ec))
         return {};
 
-    auto result = Processes::run(std::string(executable), {"--version"});
+    auto result = eacp::Processes::run(std::string(executable), {"--version"});
     if (!result.exited || result.exitCode != 0)
         return {};
 
@@ -521,12 +475,6 @@ inline std::string executableVersion(std::string_view executable)
     while (!out.empty() && std::isspace(static_cast<unsigned char>(out.back())))
         out.pop_back();
     return out;
-}
-
-inline bool openBundle(std::string_view appPath)
-{
-    auto result = Processes::run("/usr/bin/open", {std::string(appPath)});
-    return result.exited && result.exitCode == 0;
 }
 
 inline std::optional<Updater::RemoteAppManifest> fetchRemoteManifest(
@@ -614,11 +562,8 @@ inline std::string nowUtc()
     auto time = std::chrono::system_clock::to_time_t(now);
     auto tm = std::tm {};
 
-#if defined(_WIN32)
-    gmtime_s(&tm, &time);
-#else
-    gmtime_r(&time, &tm);
-#endif
+    if (auto* utc = std::gmtime(&time))
+        tm = *utc;
 
     auto out = std::ostringstream();
     out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
@@ -724,22 +669,38 @@ public:
     CommandResult openProduct(const ProductRequest& request)
     {
         auto helper = Detail::makeMockHelper(root);
-        auto* receipt = Updater::findReceipt(helper.receipts(), request.productId);
-        if (receipt == nullptr)
+        auto receipts = helper.receipts();
+        auto* receipt = Updater::findReceipt(receipts, request.productId);
+        auto catalog = Detail::loadCatalog(root, false);
+        auto* product = Updater::findProduct(catalog, request.productId);
+        if (receipt == nullptr && product == nullptr)
             return fail(request.productId + " is not installed");
 
         beginOperation(HubOperationKind::Launching,
                        "Opening " + request.productId,
                        "Launching installed app bundle",
                        request.productId);
-        if (auto app = installedAppBundle(*receipt))
+        auto app = std::optional<fs::path>();
+        if (receipt != nullptr)
+            app = installedAppBundle(*receipt);
+        if (!app && product != nullptr && !product->bundleName.empty())
+            app = AppHub::installedAppBundlePath(product->bundleName);
+
+        if (!app)
         {
-            if (!Detail::openBundle(app->string()))
-            {
-                finishOperation(false, "Launch failed");
-                return fail("Launch failed");
-            }
+            auto message = request.productId + " does not have an installed app bundle";
+            finishOperation(false, message);
+            return fail(message);
         }
+
+        if (auto launched = AppHub::openAppBundle(app->string()); !launched.ok)
+        {
+            auto message = launched.error.empty() ? "Launch failed"
+                                                  : launched.error;
+            finishOperation(false, message);
+            return fail(message);
+        }
+
         Detail::writeFile(Detail::runningPath(root, request.productId), "running");
         refreshState("Opened " + request.productId);
         finishOperation(true, "App running");
@@ -857,22 +818,24 @@ public:
     {
         beginOperation(HubOperationKind::Launching,
                        "Launching Demo App",
-                       std::string(Detail::installedDemoApp));
-        auto launched = Detail::openBundle(Detail::installedDemoApp);
-        finishOperation(launched, launched ? "Demo App launched"
-                                           : "Demo App launch failed");
-        return launched ? ok("Demo App launched") : fail("Demo App launch failed");
+                       AppHub::installedDemoAppBundlePath().string());
+        auto launched =
+            AppHub::openAppBundle(AppHub::installedDemoAppBundlePath().string());
+        finishOperation(launched.ok, launched.ok ? "Demo App launched"
+                                                 : launched.error);
+        return launched.ok ? ok("Demo App launched") : fail(launched.error);
     }
 
     CommandResult launchHub()
     {
         beginOperation(HubOperationKind::Launching,
                        "Launching AppHub",
-                       std::string(Detail::installedHubApp));
-        auto launched = Detail::openBundle(Detail::installedHubApp);
-        finishOperation(launched, launched ? "AppHub launched"
-                                           : "AppHub launch failed");
-        return launched ? ok("AppHub launched") : fail("AppHub launch failed");
+                       AppHub::installedHubAppBundlePath().string());
+        auto launched =
+            AppHub::openAppBundle(AppHub::installedHubAppBundlePath().string());
+        finishOperation(launched.ok, launched.ok ? "AppHub launched"
+                                                 : launched.error);
+        return launched.ok ? ok("AppHub launched") : fail(launched.error);
     }
 
     CommandResult installPrivilegedHelper()
@@ -989,7 +952,29 @@ private:
         updateRemoteStatuses();
         finishOperation(true, "Installed " + manifest->name + " "
                                   + manifest->version);
+        if (manifest->productId == "com.tamber.AppHub")
+            relaunchInstalledHub();
         return ok("Installed " + manifest->name + " " + manifest->version);
+    }
+
+    void relaunchInstalledHub()
+    {
+        beginOperation(HubOperationKind::Launching,
+                       "Relaunching AppHub",
+                       AppHub::installedHubAppBundlePath().string(),
+                       "com.tamber.AppHub");
+        auto launched = AppHub::openNewAppBundleInstance(
+            AppHub::installedHubAppBundlePath().string());
+        if (!launched.ok)
+        {
+            auto message = launched.error.empty()
+                               ? "Installed AppHub, but relaunch failed"
+                               : launched.error;
+            finishOperation(false, message);
+            return;
+        }
+
+        eacp::Threads::callAsync([] { eacp::Apps::quit(); });
     }
 
     CommandResult stagePlanArtifacts(const Updater::InstallPlan& plan,
@@ -1147,8 +1132,8 @@ private:
         receipt.productId = product.id;
         receipt.name = product.name;
         receipt.version = operation.version;
-        receipt.installPath = (fs::path("/Applications") / product.bundleName)
-                                  .string();
+        receipt.installPath =
+            AppHub::installedAppBundlePath(product.bundleName).string();
         receipt.channel = operation.channel;
         receipt.artifactSha256 = operation.artifactSha256;
         receipt.installedAt = Detail::nowUtc();
@@ -1163,12 +1148,18 @@ private:
         const Updater::ProductReceipt& receipt) const
     {
         auto rootPath = fs::path(receipt.installPath);
+        if (receipt.installPath.size() >= 4
+            && receipt.installPath.compare(receipt.installPath.size() - 4,
+                                           4,
+                                           ".app")
+                   == 0)
+        {
+            return rootPath;
+        }
+
         auto ec = std::error_code();
         if (!fs::exists(rootPath, ec))
             return std::nullopt;
-
-        if (rootPath.extension() == ".app")
-            return rootPath;
 
         for (const auto& entry: fs::directory_iterator(rootPath, ec))
         {
@@ -1194,10 +1185,12 @@ private:
         next.catalogVersion = catalog.catalogVersion;
         next.helperState = helperState;
         next.operation = operationSnapshot();
-        next.demoApp = remoteStatusFromLocal(std::string(Detail::installedDemoExecutable),
-                                             "Demo App");
-        next.hubApp = remoteStatusFromLocal(std::string(Detail::installedHubExecutable),
-                                            "AppHub");
+        next.demoApp = remoteStatusFromLocal(
+            AppHub::installedDemoAppExecutablePath().string(),
+            "Demo App");
+        next.hubApp = remoteStatusFromLocal(
+            AppHub::installedHubAppExecutablePath().string(),
+            "AppHub");
         next.operation.detail = detail.empty() ? next.operation.detail : detail;
 
         for (const auto& product: catalog.products)
@@ -1232,10 +1225,12 @@ private:
     void updateRemoteStatuses()
     {
         auto demo = remoteStatusFromManifest(Detail::defaultDemoManifestUrl,
-                                             Detail::installedDemoExecutable,
+                                             AppHub::installedDemoAppExecutablePath()
+                                                 .string(),
                                              "Demo App");
         auto hub = remoteStatusFromManifest(Detail::defaultHubManifestUrl,
-                                            Detail::installedHubExecutable,
+                                            AppHub::installedHubAppExecutablePath()
+                                                .string(),
                                             "AppHub");
 
         {

@@ -4,6 +4,7 @@ find_package(NanoTest REQUIRED)
 
 add_subdirectory(Core)
 add_subdirectory(Updater)
+add_subdirectory(AppHub)
 
 if (APPLE)
     add_subdirectory(ObjC)

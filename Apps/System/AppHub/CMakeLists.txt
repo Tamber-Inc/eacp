@@ -34,9 +34,17 @@ set(EACP_APPHUB_HELPER_SIGNING_REQUIREMENT
     "Code signing requirement for the AppHub privileged helper")
 
 if (APPLE)
-    set(APPHUB_PLATFORM_SOURCES PrivilegedHelperClient-macOS.mm)
+    set(APPHUB_PLATFORM_SOURCES
+        AppHubApi-macOS.mm
+        PrivilegedHelperClient-macOS.mm)
+elseif (WIN32)
+    set(APPHUB_PLATFORM_SOURCES
+        AppHubApi-Windows.cpp
+        PrivilegedHelperClient-Unsupported.cpp)
 else ()
-    set(APPHUB_PLATFORM_SOURCES PrivilegedHelperClient-Unsupported.cpp)
+    set(APPHUB_PLATFORM_SOURCES
+        AppHubApi-Windows.cpp
+        PrivilegedHelperClient-Unsupported.cpp)
 endif ()
 
 eacp_add_webview_app(AppHub
@@ -50,7 +58,7 @@ eacp_add_webview_app(AppHub
     LINK_LIBRARIES eacp-updater eacp-network
     REACT)
 
-target_sources(AppHub PRIVATE App.h)
+target_sources(AppHub PRIVATE App.h AppHubPlatform.h)
 target_link_libraries(AppHub PRIVATE eacp-updater eacp-network)
 eacp_set_gui_subsystem(AppHub)
 

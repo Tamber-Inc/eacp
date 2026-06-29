@@ -139,7 +139,16 @@ verifyCodeSignature(packagedAppHub);
 verifyAppHubDeploymentTarget(packagedAppHub, macOSDeploymentTarget);
 verifyAppHubPrivilegedHelper(packagedAppHub);
 
+log('Verify packaged catalog app artifacts');
+const packagedAppsVerifyDir = join(buildDir, 'packaged-catalog-apps-verify');
+cleanDir(packagedAppsVerifyDir);
+run('ditto', ['-x', '-k', join(outDir, mazeZip), packagedAppsVerifyDir]);
+run('ditto', ['-x', '-k', join(outDir, teapotZip), packagedAppsVerifyDir]);
+verifyCodeSignature(join(packagedAppsVerifyDir, 'Maze.app'));
+verifyCodeSignature(join(packagedAppsVerifyDir, 'Teapot.app'));
+
 const demoSha = sha256File(join(outDir, demoZip));
+const appHubSha = sha256File(join(outDir, appHubZip));
 const mazeSha = sha256File(join(outDir, mazeZip));
 const teapotSha = sha256File(join(outDir, teapotZip));
 const runtimeSha = sha256File(join(outDir, runtimeBlob));
@@ -155,6 +164,18 @@ const manifest = {
   },
 };
 writeJson(join(outDir, 'manifest.json'), manifest);
+
+const hubManifest = {
+  productId: 'com.tamber.AppHub',
+  name: 'AppHub',
+  version,
+  bundleName: 'AppHub.app',
+  artifact: {
+    url: `${releaseBaseUrl}/${appHubZip}`,
+    sha256: appHubSha,
+  },
+};
+writeJson(join(outDir, 'hub-manifest.json'), hubManifest);
 
 const catalog = makeCatalog({
   version,
@@ -173,4 +194,5 @@ writeJson(join(outDir, 'apphub-catalog.json'), catalog);
 log('Release assets');
 run('ls', ['-lh', outDir]);
 console.log(JSON.stringify(manifest, null, 2));
+console.log(JSON.stringify(hubManifest, null, 2));
 console.log(JSON.stringify(catalog, null, 2));

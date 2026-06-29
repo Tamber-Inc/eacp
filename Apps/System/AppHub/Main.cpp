@@ -1,30 +1,28 @@
 #include "App.h"
+#include "AppHubPlatform.h"
 
 #include <eacp/Updater/Updater.h>
 
-#include <eacp/Core/Process/Process.h>
 #include <eacp/Core/Utils/SHA256.h>
+#include <eacp/Network/HTTP/Http.h>
 #include <eacp/Graphics/Graphics.h>
 
 #include "PrivilegedHelperClient.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
-#include <spawn.h>
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <sys/wait.h>
-#include <unistd.h>
-#include <vector>
 
 namespace fs = std::filesystem;
 namespace Graphics = eacp::Graphics;
-namespace Processes = eacp::Processes;
+namespace HTTP = eacp::HTTP;
 namespace Updater = eacp::Updater;
 
 #ifndef EACP_APPHUB_VERSION
@@ -41,28 +39,14 @@ namespace Updater = eacp::Updater;
     "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/hub-manifest.json"
 #endif
 
-#if !defined(_WIN32)
-extern char** environ;
-#endif
-
 namespace
 {
-constexpr auto platform = Updater::Platform::MacOS;
-constexpr auto architecture = Updater::Architecture::Universal;
 constexpr std::string_view editorId = "tamber.editor";
 constexpr std::string_view captureId = "tamber.capture";
 constexpr std::string_view runtimeId = "shared.onnxruntime";
 constexpr std::string_view modelId = "shared.clap";
 constexpr std::string_view defaultDemoManifestUrl = EACP_APPHUB_DEMO_MANIFEST_URL;
 constexpr std::string_view defaultHubManifestUrl = EACP_APPHUB_MANIFEST_URL;
-constexpr std::string_view installedDemoApp =
-    "/Applications/Tamber Local Update Demo.app";
-constexpr std::string_view installedDemoExecutable =
-    "/Applications/Tamber Local Update Demo.app/Contents/MacOS/"
-    "Tamber Local Update Demo";
-constexpr std::string_view installedHubApp = "/Applications/AppHub.app";
-constexpr std::string_view installedHubExecutable =
-    "/Applications/AppHub.app/Contents/MacOS/AppHub";
 
 struct CliOptions
 {
@@ -72,7 +56,6 @@ struct CliOptions
     std::string manifestUrl;
 };
 
-bool runProcess(const std::vector<std::string>& args);
 fs::path remoteDownloadRoot(const fs::path& root);
 
 void writeFile(const fs::path& path, const std::string& text)
@@ -89,17 +72,15 @@ std::string stringFrom(std::string_view value)
 
 Updater::Target makeTarget()
 {
-    auto target = Updater::Target();
-    target.platform = platform;
-    target.architecture = architecture;
-    return target;
+    return AppHub::currentTarget();
 }
 
 Updater::ProductArtifact makeArtifact(const fs::path& artifact)
 {
     auto out = Updater::ProductArtifact();
-    out.platform = platform;
-    out.architecture = architecture;
+    auto target = makeTarget();
+    out.platform = target.platform;
+    out.architecture = target.architecture;
     out.url = "file://" + artifact.string();
     out.sha256 = eacp::Crypto::sha256File(artifact.string());
     out.signature = "dev-signature-placeholder";
@@ -122,18 +103,11 @@ std::string downloadText(std::string_view url, const fs::path& output)
     if (ec)
         return {};
 
-    auto result =
-        Processes::run("/usr/bin/curl",
-                       {"--fail",
-                        "--location",
-                        "--silent",
-                        "--show-error",
-                        std::string(url),
-                        "--output",
-                        output.string()});
-    if (!result.exited || result.exitCode != 0)
+    auto response = HTTP::Request(std::string(url)).perform();
+    if (response.statusCode < 200 || response.statusCode >= 300)
         return {};
 
+    writeFile(output, response.content);
     return readFile(output);
 }
 
@@ -143,7 +117,7 @@ std::string executableVersion(std::string_view executable)
     if (!fs::exists(fs::path(executable), ec))
         return {};
 
-    auto result = Processes::run(std::string(executable), {"--version"});
+    auto result = eacp::Processes::run(std::string(executable), {"--version"});
     if (!result.exited || result.exitCode != 0)
         return {};
 
@@ -197,7 +171,7 @@ std::string updateStatusFor(const fs::path& root,
 
 bool openBundle(std::string_view appPath)
 {
-    return runProcess({"/usr/bin/open", std::string(appPath)});
+    return AppHub::openAppBundle(appPath).ok;
 }
 
 fs::path catalogPath(const fs::path& root)
@@ -225,14 +199,9 @@ fs::path remoteDownloadRoot(const fs::path& root)
     return root / "remote-downloads";
 }
 
-fs::path remoteUnpackRoot(const fs::path& root)
-{
-    return root / "remote-unpack";
-}
-
 fs::path& guiStateRoot()
 {
-    static auto root = fs::temp_directory_path() / "eacp-apphub-gui";
+    static auto root = AppHub::defaultStateRoot();
     return root;
 }
 
@@ -409,46 +378,6 @@ std::optional<CliOptions> parseArgs(int argc, char* argv[])
     }
 
     return options;
-}
-
-bool runProcess(const std::vector<std::string>& args)
-{
-    if (args.empty())
-        return false;
-
-#if defined(_WIN32)
-    return false;
-#else
-    auto argv = std::vector<char*>();
-    argv.reserve(args.size() + 1);
-    for (const auto& arg: args)
-        argv.push_back(const_cast<char*>(arg.c_str()));
-    argv.push_back(nullptr);
-
-    auto pid = pid_t {};
-    auto status = posix_spawnp(&pid, argv[0], nullptr, nullptr, argv.data(), environ);
-    if (status != 0)
-        return false;
-
-    auto waitStatus = 0;
-    if (waitpid(pid, &waitStatus, 0) < 0)
-        return false;
-
-    return WIFEXITED(waitStatus) && WEXITSTATUS(waitStatus) == 0;
-#endif
-}
-
-bool runInstallProcess(std::vector<std::string> args)
-{
-#if defined(_WIN32)
-    return false;
-#else
-    if (::access("/Applications", W_OK) == 0)
-        return runProcess(args);
-
-    args.insert(args.begin(), "sudo");
-    return runProcess(args);
-#endif
 }
 
 bool validBundleName(const std::string& bundleName)
@@ -651,63 +580,10 @@ int directInstallAppBundle(const fs::path& root,
                            const Updater::RemoteAppManifest& manifest,
                            const fs::path& artifactPath)
 {
-    auto unpack = remoteUnpackRoot(root);
-
-    std::error_code ec;
-    fs::remove_all(unpack, ec);
-    fs::create_directories(unpack, ec);
-    if (ec)
+    auto result = AppHub::directInstallAppBundle(root, manifest, artifactPath);
+    if (!result.ok)
     {
-        std::cout << "Remote install: failed to create unpack directory\n";
-        return 1;
-    }
-
-    if (!runProcess({"/usr/bin/ditto",
-                     "-x",
-                     "-k",
-                     artifactPath.string(),
-                     unpack.string()}))
-    {
-        std::cout << "Remote install: failed to unpack artifact\n";
-        return 1;
-    }
-
-    auto unpackedApp = unpack / manifest.bundleName;
-    if (!fs::is_directory(unpackedApp, ec))
-    {
-        std::cout << "Remote install: artifact did not contain "
-                  << manifest.bundleName << "\n";
-        return 1;
-    }
-
-    auto installPath = fs::path("/Applications") / manifest.bundleName;
-    auto rollbackPath =
-        fs::path("/Applications") / (manifest.bundleName + ".rollback");
-
-    std::cout << "Remote install: dev fallback installing to " << installPath
-              << "\n";
-    if (!runInstallProcess({"/bin/rm", "-rf", rollbackPath.string()}))
-    {
-        std::cout << "Remote install: failed to remove old rollback\n";
-        return 1;
-    }
-
-    if (fs::exists(installPath, ec)
-        && !runInstallProcess({"/bin/mv",
-                               installPath.string(),
-                               rollbackPath.string()}))
-    {
-        std::cout << "Remote install: failed to create rollback\n";
-        return 1;
-    }
-
-    if (!runInstallProcess(
-            {"/bin/mv", unpackedApp.string(), installPath.string()})
-        && !runInstallProcess({"/usr/bin/ditto",
-                               unpackedApp.string(),
-                               installPath.string()}))
-    {
-        std::cout << "Remote install: failed to install app\n";
+        std::cout << "Remote install: " << result.error << "\n";
         return 1;
     }
 
@@ -733,14 +609,8 @@ int remoteInstall(const fs::path& root, const std::string& manifestUrl)
     }
 
     std::cout << "Remote install: downloading manifest\n";
-    if (!runProcess({"/usr/bin/curl",
-                     "--fail",
-                     "--location",
-                     "--silent",
-                     "--show-error",
-                     effectiveManifestUrl,
-                     "--output",
-                     manifestPath.string()}))
+    auto rawManifest = downloadText(effectiveManifestUrl, manifestPath);
+    if (rawManifest.empty())
     {
         std::cout << "Remote install: manifest download failed\n";
         return 1;
@@ -749,7 +619,7 @@ int remoteInstall(const fs::path& root, const std::string& manifestUrl)
     auto manifest = Updater::RemoteAppManifest();
     try
     {
-        Miro::fromJSONString(manifest, readFile(manifestPath));
+        Miro::fromJSONString(manifest, rawManifest);
     }
     catch (...)
     {
@@ -768,14 +638,9 @@ int remoteInstall(const fs::path& root, const std::string& manifestUrl)
 
     std::cout << "Remote install: downloading " << manifest.name << " "
               << manifest.version << "\n";
-    if (!runProcess({"/usr/bin/curl",
-                     "--fail",
-                     "--location",
-                     "--silent",
-                     "--show-error",
-                     manifest.artifact.url,
-                     "--output",
-                     artifactPath.string()}))
+    auto response = HTTP::Request(manifest.artifact.url).downloadTo(
+        artifactPath.string());
+    if (response.statusCode < 200 || response.statusCode >= 300)
     {
         std::cout << "Remote install: artifact download failed\n";
         return 1;
@@ -812,13 +677,8 @@ int remoteInstall(const fs::path& root, const std::string& manifestUrl)
         return 1;
     }
 
-    auto executable =
-        fs::path("/Applications") / manifest.bundleName / "Contents" / "MacOS"
-        / manifest.name;
     std::cout << "Remote install: installed " << manifest.name << " "
               << manifest.version << "\n";
-    if (fs::exists(executable, ec))
-        runProcess({executable.string(), "--version"});
 
     return 0;
 }
@@ -841,7 +701,7 @@ int updateHubApp(const fs::path& root, const std::string& manifestUrl)
 
 int launchDemoApp()
 {
-    if (!openBundle(installedDemoApp))
+    if (!openBundle(AppHub::installedDemoAppBundlePath().string()))
     {
         std::cout << "Launch Demo App: failed\n";
         return 1;
@@ -853,7 +713,7 @@ int launchDemoApp()
 
 int launchHubApp()
 {
-    if (!openBundle(installedHubApp))
+    if (!openBundle(AppHub::installedHubAppBundlePath().string()))
     {
         std::cout << "Launch AppHub: failed\n";
         return 1;
@@ -868,13 +728,14 @@ int checkRemoteUpdates(const fs::path& root)
     std::cout << updateStatusFor(root,
                                  defaultDemoManifestUrl,
                                  "demo-manifest",
-                                 installedDemoExecutable,
+                                 AppHub::installedDemoAppExecutablePath()
+                                     .string(),
                                  "Demo App")
               << "\n";
     std::cout << updateStatusFor(root,
                                  defaultHubManifestUrl,
                                  "hub-manifest",
-                                 installedHubExecutable,
+                                 AppHub::installedHubAppExecutablePath().string(),
                                  "AppHub")
               << "\n";
     return 0;
@@ -888,6 +749,17 @@ int openProduct(const fs::path& root, const std::string& productId)
     {
         std::cout << "Open " << productId << ": not installed\n";
         return 1;
+    }
+
+    auto installPath = fs::path(receipt->installPath);
+    if (installPath.extension() == ".app" || fs::is_directory(installPath))
+    {
+        auto launched = AppHub::openAppBundle(installPath.string());
+        if (!launched.ok)
+        {
+            std::cout << "Open " << productId << ": " << launched.error << "\n";
+            return 1;
+        }
     }
 
     writeFile(runningPath(root, productId), "running");
@@ -1171,12 +1043,12 @@ struct AppHubGui
             updateStatusFor(root,
                             defaultDemoManifestUrl,
                             "demo-manifest",
-                            installedDemoExecutable,
+                            AppHub::installedDemoAppExecutablePath().string(),
                             "Demo App"),
             updateStatusFor(root,
                             defaultHubManifestUrl,
                             "hub-manifest",
-                            installedHubExecutable,
+                            AppHub::installedHubAppExecutablePath().string(),
                             "AppHub"));
         window.setVisible(true);
     }
