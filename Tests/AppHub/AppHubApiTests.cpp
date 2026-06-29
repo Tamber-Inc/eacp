@@ -20,9 +20,24 @@ struct LaunchProbe
     std::string launchedPath;
 };
 
+struct HelperProbe
+{
+    int helperInstallCalls = 0;
+    int appInstallCalls = 0;
+    int appInstallFailuresBeforeSuccess = 0;
+    bool helperInstallSucceeds = false;
+    Updater::PrivilegedAppBundleInstallRequest lastInstallRequest;
+};
+
 LaunchProbe& launchProbe()
 {
     static auto probe = LaunchProbe();
+    return probe;
+}
+
+HelperProbe& helperProbe()
+{
+    static auto probe = HelperProbe();
     return probe;
 }
 
@@ -218,13 +233,23 @@ PlatformResult directInstallAppBundle(const fs::path&,
 
 PrivilegedHelperInstallResult installPrivilegedHelper()
 {
-    return {.ok = false, .error = "not used"};
+    auto& probe = helperProbe();
+    ++probe.helperInstallCalls;
+    if (probe.helperInstallSucceeds)
+        return {.ok = true};
+    return {.ok = false, .error = "helper repair failed"};
 }
 
 Updater::InstallResult installAppBundleWithPrivilegedHelper(
-    const Updater::PrivilegedAppBundleInstallRequest&)
+    const Updater::PrivilegedAppBundleInstallRequest& request)
 {
-    return {.ok = false, .error = "not used"};
+    auto& probe = helperProbe();
+    ++probe.appInstallCalls;
+    probe.lastInstallRequest = request;
+    if (probe.appInstallCalls <= probe.appInstallFailuresBeforeSuccess)
+        return {.ok = false,
+                .error = "privileged helper connection invalidated"};
+    return {.ok = true};
 }
 } // namespace AppHub
 
@@ -277,6 +302,52 @@ auto tOpenProductFallsBackToCatalogBundleWhenReceiptIsMissing =
     check(launchProbe().launchedPath
           == AppHub::installedAppBundlePath("Maze.app").string());
     check(fs::exists(root / "running" / "com.eacp.maze.running"));
+};
+
+auto tInstallProductRepairsMissingPrivilegedHelper =
+    test("AppHub/installProductRepairsMissingPrivilegedHelper") = []
+{
+    auto root = testRoot("install-repairs-helper");
+    auto artifact = root / "artifacts" / "maze.app.zip";
+    writeFile(artifact, "maze artifact");
+
+    auto product = makeAppProduct();
+    product.latestVersion = "9.9.7";
+
+    auto productArtifact = Updater::ProductArtifact();
+    productArtifact.platform = Updater::Platform::MacOS;
+    productArtifact.architecture = Updater::Architecture::Universal;
+    productArtifact.url = "file://" + artifact.string();
+    productArtifact.sha256 = eacp::Crypto::sha256File(artifact.string());
+    product.artifacts.add(productArtifact);
+
+    auto catalog = Updater::ProductCatalog();
+    catalog.catalogVersion = 2;
+    catalog.signature = "test";
+    catalog.products.add(product);
+    writeCatalogAt(root / "catalog.json", catalog);
+
+    helperProbe() = {};
+    helperProbe().appInstallFailuresBeforeSuccess = 1;
+    helperProbe().helperInstallSucceeds = true;
+
+    auto api = Api::AppHubApi(root);
+    auto result = api.installProduct({.productId = "com.eacp.maze"});
+    auto state = api.getHubState();
+    auto helper = Updater::MockPrivilegedHelper(
+        Updater::MockHelperOptions {.root = root.string(),
+                                    .stagingRoot = (root / "staging").string()});
+    auto receipts = helper.receipts();
+    auto* receipt = Updater::findReceipt(receipts, "com.eacp.maze");
+
+    check(result.ok);
+    check(helperProbe().appInstallCalls == 2);
+    check(helperProbe().helperInstallCalls == 1);
+    check(helperProbe().lastInstallRequest.bundleName == "Maze.app");
+    check(state.helperState == Api::HubHelperState::Installed);
+    check(receipt != nullptr);
+    if (receipt != nullptr)
+        check(receipt->version == "9.9.7");
 };
 
 auto tLoadsConfiguredDevCatalog =

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { backend } from './generated/backend';
 import { useHubState } from './generated/hooks';
 import type {
+    HubHelperState,
     HubInstallState,
     HubOperation,
     HubOperationKind,
@@ -44,6 +45,20 @@ const operationKindLabels: Record<HubOperationKind, string> = {
     Resetting: 'Resetting',
 };
 
+const helperStateLabels: Record<HubHelperState, string> = {
+    Unknown: 'Needs setup',
+    Installed: 'Ready',
+    Missing: 'Needs repair',
+    Failed: 'Repair failed',
+};
+
+const helperStateDetails: Record<HubHelperState, string> = {
+    Unknown: 'Install the helper before installing apps.',
+    Installed: 'The helper is available for app installs and updates.',
+    Missing: 'Repair the helper to continue installing apps.',
+    Failed: 'Repair the helper and approve the admin prompt.',
+};
+
 export default function App()
 {
     const state = useHubState();
@@ -74,6 +89,7 @@ export default function App()
             </header>
 
             <OperationStrip operation={state.operation} />
+            <HelperStrip helperState={state.helperState} />
 
             <section className="grid remote-grid single">
                 <RemoteCard
@@ -118,6 +134,28 @@ export default function App()
                 </div>
             </section>
         </main>
+    );
+}
+
+function HelperStrip({ helperState }: { helperState: HubHelperState })
+{
+    const ready = helperState === 'Installed';
+
+    return (
+        <section className={`helper-strip ${ready ? 'ready' : 'needs-repair'}`}>
+            <div>
+                <span className="eyebrow">Installer Helper</span>
+                <strong>{helperStateLabels[helperState]}</strong>
+                <p>{helperStateDetails[helperState]}</p>
+            </div>
+            <button
+                type="button"
+                className={ready ? undefined : 'primary'}
+                onClick={() => void backend.installPrivilegedHelper()}
+            >
+                {ready ? 'Repair helper' : 'Install helper'}
+            </button>
+        </section>
     );
 }
 

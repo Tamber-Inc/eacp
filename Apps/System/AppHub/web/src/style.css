@@ -62,6 +62,7 @@ main
 }
 
 .topbar,
+.helper-strip,
 .section-head,
 .button-row,
 .product-main,
@@ -137,6 +138,27 @@ p,
     border: 1px solid #27353b;
     background: #141b20;
     border-radius: 8px;
+}
+
+.helper-strip
+{
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 18px;
+    padding: 14px 16px;
+    border: 1px solid #3d564d;
+    background: #131d1c;
+    border-radius: 8px;
+}
+
+.helper-strip.needs-repair
+{
+    border-color: #8c6b3b;
+}
+
+.helper-strip p
+{
+    margin-top: 3px;
 }
 
 .operation.working
@@ -359,6 +381,7 @@ dd
     }
 
     .topbar,
+    .helper-strip,
     .operation,
     .remote-grid,
     .product-row,

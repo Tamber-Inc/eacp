@@ -220,6 +220,13 @@ constexpr std::string_view defaultHubManifestUrl = EACP_APPHUB_MANIFEST_URL;
 constexpr std::string_view defaultCatalogUrl = EACP_APPHUB_CATALOG_URL;
 constexpr std::string_view devCatalogPath = EACP_APPHUB_DEV_CATALOG_PATH;
 
+inline bool helperErrorNeedsRepair(const std::string& message)
+{
+    return message.find("privileged helper connection") != std::string::npos
+        || message.find("privileged helper did not reply") != std::string::npos
+        || message.find("privileged helper timed out") != std::string::npos;
+}
+
 inline std::string selectedDevCatalogPath()
 {
     if (auto* overridePath = std::getenv("EACP_APPHUB_DEV_CATALOG_PATH");
@@ -940,19 +947,25 @@ public:
 
     CommandResult installPrivilegedHelper()
     {
-        beginOperation(HubOperationKind::Installing,
-                       "Installing privileged helper",
-                       "Requesting SMJobBless");
-        auto result = AppHub::installPrivilegedHelper();
-        setHelperState(result.ok ? HubHelperState::Installed : HubHelperState::Failed);
-        finishOperation(result.ok, result.ok ? "Privileged helper installed"
-                                             : result.error);
-        return result.ok ? ok("Privileged helper installed") : fail(result.error);
+        return repairPrivilegedHelper("Installing privileged helper",
+                                      "Requesting admin approval");
     }
 
     Miro::Event<HubState> hubState;
 
 private:
+    CommandResult repairPrivilegedHelper(const std::string& title,
+                                         const std::string& detail)
+    {
+        beginOperation(HubOperationKind::Installing, title, detail);
+        auto result = AppHub::installPrivilegedHelper();
+        setHelperState(result.ok ? HubHelperState::Installed
+                                 : HubHelperState::Failed);
+        finishOperation(result.ok, result.ok ? "Privileged helper installed"
+                                             : result.error);
+        return result.ok ? ok("Privileged helper installed") : fail(result.error);
+    }
+
     CommandResult installRemoteApp(
         const std::string& manifestUrl,
         std::optional<Updater::RemoteAppManifest> prefetchedManifest = std::nullopt)
@@ -1222,9 +1235,27 @@ private:
         request.artifactSha256 = operation.artifactSha256;
 
         auto result = AppHub::installAppBundleWithPrivilegedHelper(request);
+        if (!result.ok && Detail::helperErrorNeedsRepair(result.error))
+        {
+            setHelperState(HubHelperState::Missing);
+            auto repaired = repairPrivilegedHelper("Repairing privileged helper",
+                                                   "Admin approval may be required");
+            if (!repaired.ok)
+                return fail("Privileged helper repair failed: "
+                            + repaired.message);
+
+            beginOperation(HubOperationKind::Installing,
+                           "Installing " + product.name,
+                           "Retrying after helper repair",
+                           product.id);
+            result = AppHub::installAppBundleWithPrivilegedHelper(request);
+        }
+
         if (!result.ok)
         {
-            setHelperState(HubHelperState::Failed);
+            setHelperState(Detail::helperErrorNeedsRepair(result.error)
+                               ? HubHelperState::Missing
+                               : HubHelperState::Failed);
             return fail(result.error);
         }
 
