@@ -967,12 +967,34 @@ public:
 
     CommandResult closeProduct(const ProductRequest& request)
     {
-        std::error_code ec;
-        fs::remove(Detail::runningPath(root, request.productId), ec);
-        if (ec)
-            return fail(ec.message());
+        auto catalog = Detail::loadCatalog(root, false);
+        auto helper = Detail::makeMockHelper(root);
+        auto receipts = helper.receipts();
+        auto app = Detail::appBundleForProduct(catalog, receipts, request.productId);
 
-        refreshState("Closed " + request.productId);
+        beginOperation(HubOperationKind::Launching,
+                       "Closing " + request.productId,
+                       app ? app->string() : "No app bundle found",
+                       request.productId);
+
+        if (!app)
+        {
+            Detail::clearRunningMarker(root, request.productId);
+            auto message = request.productId + " does not have an app bundle";
+            finishOperation(false, message);
+            return fail(message);
+        }
+
+        auto closed = AppHub::closeAppBundle(app->string());
+        if (!closed.ok)
+        {
+            auto message = closed.error.empty() ? "Close failed" : closed.error;
+            finishOperation(false, message);
+            return fail(message);
+        }
+
+        Detail::clearRunningMarker(root, request.productId);
+        finishOperation(true, "App closed");
         return ok("Closed " + request.productId);
     }
 

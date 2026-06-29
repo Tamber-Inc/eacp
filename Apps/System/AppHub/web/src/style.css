@@ -154,6 +154,18 @@ p,
     flex-wrap: wrap;
 }
 
+.topbar-actions
+{
+    align-items: center;
+}
+
+.channel-message
+{
+    color: #92a3a5;
+    font-size: 12px;
+    min-width: 130px;
+}
+
 .operation
 {
     display: grid;

@@ -90,6 +90,11 @@ bool isAppBundleRunning(std::string_view)
     return false;
 }
 
+LaunchResult closeAppBundle(std::string_view)
+{
+    return {.ok = true};
+}
+
 LaunchResult openAppBundle(std::string_view appPath)
 {
 #if defined(_WIN32)

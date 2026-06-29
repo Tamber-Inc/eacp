@@ -5,6 +5,7 @@
 #include <mach-o/dyld.h>
 
 #import <AppKit/NSWorkspace.h>
+#import <AppKit/NSRunningApplication.h>
 #import <Foundation/Foundation.h>
 
 #include <cstdint>
@@ -118,6 +119,81 @@ bool isAppBundleRunning(std::string_view appPath)
     }
 
     return false;
+}
+
+LaunchResult closeAppBundle(std::string_view appPath)
+{
+    auto ec = std::error_code();
+    auto path = fs::weakly_canonical(fs::path(std::string(appPath)), ec);
+    if (ec)
+        path = fs::path(std::string(appPath));
+
+    @autoreleasepool
+    {
+        auto target = [NSURL fileURLWithPath:
+                                 [NSString stringWithUTF8String:path.string()
+                                                                    .c_str()]
+                               isDirectory:YES];
+        auto* matches = [NSMutableArray array];
+        for (NSRunningApplication* app in [[NSWorkspace sharedWorkspace]
+                 runningApplications])
+        {
+            auto* bundleURL = [app bundleURL];
+            if (bundleURL != nil && [bundleURL isEqual:target])
+                [matches addObject:app];
+        }
+
+        if ([matches count] == 0)
+            return {.ok = true};
+
+        for (NSRunningApplication* app in matches)
+        {
+            if (![app terminate])
+                [app forceTerminate];
+        }
+
+        auto* deadline = [NSDate dateWithTimeIntervalSinceNow:5.0];
+        while ([[NSDate date] compare:deadline] == NSOrderedAscending)
+        {
+            auto allTerminated = true;
+            for (NSRunningApplication* app in matches)
+            {
+                if (![app isTerminated])
+                {
+                    allTerminated = false;
+                    break;
+                }
+            }
+            if (allTerminated)
+                return {.ok = true};
+            [NSThread sleepForTimeInterval:0.05];
+        }
+
+        for (NSRunningApplication* app in matches)
+        {
+            if (![app isTerminated])
+                [app forceTerminate];
+        }
+
+        auto* forceDeadline = [NSDate dateWithTimeIntervalSinceNow:2.0];
+        while ([[NSDate date] compare:forceDeadline] == NSOrderedAscending)
+        {
+            auto allTerminated = true;
+            for (NSRunningApplication* app in matches)
+            {
+                if (![app isTerminated])
+                {
+                    allTerminated = false;
+                    break;
+                }
+            }
+            if (allTerminated)
+                return {.ok = true};
+            [NSThread sleepForTimeInterval:0.05];
+        }
+    }
+
+    return {.ok = false, .error = "Timed out closing app"};
 }
 
 namespace

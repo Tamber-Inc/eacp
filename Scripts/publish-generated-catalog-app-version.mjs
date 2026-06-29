@@ -18,11 +18,8 @@ import {
   findCatalogAppBundle,
 } from './lib/apphub-generated-catalog.mjs';
 import {
-  normalizeChannel,
-  releaseTagForChannel,
-  stableChannel,
-  stableReleaseTag,
-} from './lib/apphub-channel.mjs';
+  replaceCatalogProduct,
+} from './lib/apphub-catalog.mjs';
 import {
   ensureTamberSigningIdentity,
   notarizeAndStapleApps,
@@ -35,34 +32,33 @@ import {
 
 const version = env('VERSION', '2.0.0');
 const channel = normalizeChannel(env('APPHUB_CHANNEL', env('CHANNEL', 'stable')));
-const stableTag = env('RELEASE_TAG', stableReleaseTag);
-const releaseTag = channel === stableChannel ? stableTag : releaseTagForChannel(channel);
-const releaseBaseUrl = channel === stableChannel
-  ? env(
-    'RELEASE_BASE_URL',
-    `https://github.com/Tamber-Inc/eacp/releases/download/${releaseTag}`,
-  )
-  : `https://github.com/Tamber-Inc/eacp/releases/download/${releaseTag}`;
+const storageRoot = stripTrailingSlash(
+  env('APPHUB_STORAGE_ROOT', 'gs://tamber-artifacts/jamie-updater-demo'),
+);
+const publicRoot = stripTrailingSlash(
+  env('APPHUB_PUBLIC_ROOT', 'https://storage.googleapis.com/tamber-artifacts/jamie-updater-demo'),
+);
+const channelPath = safeChannelPath(channel);
+const releaseBaseUrl = `${publicRoot}/channels/${channelPath}/artifacts`;
+const catalogObject = `channels/${channelPath}/apphub-catalog.json`;
+const catalogUrl = `${publicRoot}/${catalogObject}`;
 const productId = envNonEmpty('APPHUB_CATALOG_PRODUCT_ID', 'com.eacp.maze');
 const target = envNonEmpty('APPHUB_CATALOG_TARGET', 'Maze');
 const outDir = env('OUT_DIR', join(repoRoot, `dist/generated-catalog-${target}-${version}`));
 const buildDir = env('BUILD_DIR', join(repoRoot, `build-generated-catalog-${target}-${version}`));
 const macOSDeploymentTarget = env('EACP_MACOS_DEPLOYMENT_TARGET', '11.0');
-const releaseRepo = env('GITHUB_REPOSITORY', 'Tamber-Inc/eacp');
 
 requireMacOS(`Generated catalog app update publishing for ${productId}`);
 
-log('Download current AppHub catalog');
+log(`Download current AppHub catalog for ${channel}`);
 cleanDir(outDir);
 const catalogPath = join(outDir, 'apphub-catalog.json');
-if (!downloadCatalog(releaseTag) && (channel === 'stable' || !downloadCatalog(stableReleaseTag))) {
-  throw new Error('Cannot publish an independent catalog app update before apphub-catalog.json exists');
-}
+downloadCatalog();
 
 const catalog = JSON.parse(readText(catalogPath));
 const productIndex = catalog.products.findIndex((product) => product.id === productId);
 if (productIndex < 0) {
-  throw new Error(`Product ${productId} does not exist in ${releaseTag}/apphub-catalog.json`);
+  throw new Error(`Product ${productId} does not exist in ${catalogUrl}`);
 }
 const currentProduct = catalog.products[productIndex];
 if (currentProduct.kind !== 'App') {
@@ -131,71 +127,114 @@ const productEntry = {
   ],
 };
 
-const nextProducts = [...catalog.products];
-nextProducts[productIndex] = productEntry;
-const nextCatalog = {
+const nextCatalog = replaceCatalogProduct({
   ...catalog,
   catalogVersion: Math.max(
     Number(catalog.catalogVersion) || 0,
     Number.parseInt(version.split('.')[0], 10) || 1,
   ),
-  products: nextProducts,
-};
+}, productEntry);
 writeJson(catalogPath, nextCatalog);
+const indexPath = join(outDir, 'index.json');
+writeChannelIndex(indexPath);
 
-log(`Upload ${currentProduct.name} ${version} and updated catalog`);
-ensureRelease(releaseTag, `AppHub channel ${channel}`);
-run('gh', [
-  'release',
-  'upload',
-  releaseTag,
+log(`Upload ${currentProduct.name} ${version} and updated ${channel} catalog`);
+run('gcloud', [
+  'storage',
+  'cp',
   zipPath,
+  `${storageRoot}/channels/${channelPath}/artifacts/${zipName}`,
+  '--cache-control=no-cache,max-age=0',
+]);
+run('gcloud', [
+  'storage',
+  'cp',
   catalogPath,
-  '--repo',
-  releaseRepo,
-  '--clobber',
+  `${storageRoot}/${catalogObject}`,
+  '--content-type=application/json',
+  '--cache-control=no-cache,max-age=0',
+]);
+run('gcloud', [
+  'storage',
+  'cp',
+  indexPath,
+  `${storageRoot}/index.json`,
+  '--content-type=application/json',
+  '--cache-control=no-cache,max-age=0',
 ]);
 
-log(`Published ${currentProduct.name} ${version}`);
+log(`Published ${currentProduct.name} ${version} to ${channel}`);
 console.log(JSON.stringify(productEntry, null, 2));
 
-function downloadCatalog(tag) {
-  const result = capture('gh', [
-    'release',
-    'download',
-    tag,
-    '--repo',
-    releaseRepo,
-    '--pattern',
-    'apphub-catalog.json',
-    '--dir',
-    outDir,
-    '--clobber',
+function downloadCatalog() {
+  const result = capture('curl', [
+    '--fail',
+    '--location',
+    '--silent',
+    '--show-error',
+    catalogUrl,
   ], { check: false });
-  return result.status === 0;
+  if (result.status === 0) {
+    writeJson(catalogPath, JSON.parse(result.stdout));
+    return;
+  }
+
+  const gcloudResult = capture('gcloud', [
+    'storage',
+    'cp',
+    `${storageRoot}/${catalogObject}`,
+    catalogPath,
+  ], { check: false });
+  if (gcloudResult.status === 0) return;
+
+  throw new Error(`Cannot download catalog: ${catalogUrl}`);
 }
 
-function ensureRelease(tag, title) {
-  const view = capture('gh', [
-    'release',
-    'view',
-    tag,
-    '--repo',
-    releaseRepo,
+function writeChannelIndex(indexPath) {
+  const fallback = {
+    defaultChannel: channel,
+    channels: [],
+  };
+  const existing = capture('gcloud', [
+    'storage',
+    'cp',
+    `${storageRoot}/index.json`,
+    indexPath,
   ], { check: false });
-  if (view.status === 0) return;
+  const index = existing.status === 0 ? JSON.parse(readText(indexPath)) : fallback;
+  const channels = (index.channels ?? []).filter((entry) => entry.id !== channel);
+  channels.push({
+    id: channel,
+    name: titleForChannel(channel),
+    catalogUrl,
+    isDefault: (index.defaultChannel || channel) === channel,
+  });
+  index.defaultChannel = index.defaultChannel || channel;
+  index.channels = channels.sort((left, right) => left.id.localeCompare(right.id));
+  writeJson(indexPath, index);
+}
 
-  run('gh', [
-    'release',
-    'create',
-    tag,
-    '--repo',
-    releaseRepo,
-    '--title',
-    title,
-    '--notes',
-    `Catalog channel '${channel}'.`,
-  ]);
+function normalizeChannel(channel) {
+  const trimmed = String(channel ?? '').trim();
+  return trimmed || 'stable';
+}
+
+function safeChannelPath(channel) {
+  return normalizeChannel(channel)
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'stable';
+}
+
+function stripTrailingSlash(value) {
+  return value.replace(/\/+$/, '');
+}
+
+function titleForChannel(channel) {
+  return channel
+    .split(/[/-]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ') || channel;
 }
 
 function envNonEmpty(name, fallback) {

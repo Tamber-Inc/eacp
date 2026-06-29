@@ -17,7 +17,9 @@ namespace
 struct LaunchProbe
 {
     bool shouldLaunch = false;
+    bool shouldClose = true;
     std::string launchedPath;
+    std::string closedPath;
 };
 
 struct HelperProbe
@@ -217,6 +219,17 @@ bool isAppBundleRunning(std::string_view appPath)
         && launchProbe().launchedPath == std::string(appPath);
 }
 
+LaunchResult closeAppBundle(std::string_view appPath)
+{
+    launchProbe().closedPath = std::string(appPath);
+    if (launchProbe().shouldClose)
+    {
+        launchProbe().shouldLaunch = false;
+        return {.ok = true};
+    }
+    return {.ok = false, .error = "test close failed"};
+}
+
 LaunchResult openAppBundle(std::string_view appPath)
 {
     launchProbe().launchedPath = std::string(appPath);
@@ -308,6 +321,47 @@ auto tOpenProductFallsBackToCatalogBundleWhenReceiptIsMissing =
     check(launchProbe().launchedPath
           == AppHub::installedAppBundlePath("Maze.app").string());
     check(fs::exists(root / "running" / "com.eacp.maze.running"));
+};
+
+auto tCloseProductTerminatesRunningApp =
+    test("AppHub/closeProductTerminatesRunningApp") = []
+{
+    auto root = testRoot("close-running-app");
+    auto appPath = (root / "Installed" / "Maze.app").string();
+    writeCatalog(root);
+    writeReceipt(root, appPath);
+    writeFile(root / "running" / "com.eacp.maze.running", "running");
+    launchProbe() = {.shouldLaunch = true, .shouldClose = true};
+    launchProbe().launchedPath = appPath;
+
+    auto api = Api::AppHubApi(root);
+    auto result = api.closeProduct({.productId = "com.eacp.maze"});
+
+    check(result.ok);
+    check(launchProbe().closedPath == appPath);
+    check(!fs::exists(root / "running" / "com.eacp.maze.running"));
+    check(api.getHubState().operation.state == Api::HubOperationState::Succeeded);
+};
+
+auto tCloseProductKeepsMarkerWhenTerminateFails =
+    test("AppHub/closeProductKeepsMarkerWhenTerminateFails") = []
+{
+    auto root = testRoot("close-running-app-fails");
+    auto appPath = (root / "Installed" / "Maze.app").string();
+    writeCatalog(root);
+    writeReceipt(root, appPath);
+    writeFile(root / "running" / "com.eacp.maze.running", "running");
+    launchProbe() = {.shouldLaunch = true, .shouldClose = false};
+    launchProbe().launchedPath = appPath;
+
+    auto api = Api::AppHubApi(root);
+    auto result = api.closeProduct({.productId = "com.eacp.maze"});
+
+    check(!result.ok);
+    check(result.message == "test close failed");
+    check(launchProbe().closedPath == appPath);
+    check(fs::exists(root / "running" / "com.eacp.maze.running"));
+    check(api.getHubState().operation.state == Api::HubOperationState::Failed);
 };
 
 auto tInstallProductRepairsMissingPrivilegedHelper =

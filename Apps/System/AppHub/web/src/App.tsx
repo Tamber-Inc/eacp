@@ -63,6 +63,8 @@ export default function App()
 {
     const state = useHubState();
     const [selectedChannel, setSelectedChannel] = useState(state.channel);
+    const [channelMessage, setChannelMessage] = useState('');
+    const [switchingChannel, setSwitchingChannel] = useState(false);
     useEffect(() => {
         if (state.channel)
             setSelectedChannel(state.channel);
@@ -90,8 +92,21 @@ export default function App()
                         className="channel-form"
                         onSubmit={(event) => {
                             event.preventDefault();
-                            if (selectedChannel)
-                                void backend.setChannel({ channel: selectedChannel });
+                            if (!selectedChannel)
+                                return;
+
+                            setSwitchingChannel(true);
+                            setChannelMessage(`Switching to ${selectedChannel}`);
+                            void backend.setChannel({ channel: selectedChannel })
+                                .then((result) => {
+                                    setChannelMessage(result.message);
+                                })
+                                .catch((error: unknown) => {
+                                    setChannelMessage(error instanceof Error
+                                        ? error.message
+                                        : 'Channel switch failed');
+                                })
+                                .finally(() => setSwitchingChannel(false));
                         }}
                     >
                         <select
@@ -109,8 +124,16 @@ export default function App()
                                 </option>
                             ))}
                         </select>
-                        <button type="submit" disabled={!hasChannels}>Switch</button>
+                        <button
+                            type="submit"
+                            disabled={!hasChannels || switchingChannel || selectedChannel === state.channel}
+                        >
+                            {switchingChannel ? 'Switching' : 'Switch'}
+                        </button>
                     </form>
+                    {channelMessage
+                        ? <span className="channel-message">{channelMessage}</span>
+                        : null}
                     <button type="button" onClick={() => void backend.refresh()}>
                         Refresh
                     </button>

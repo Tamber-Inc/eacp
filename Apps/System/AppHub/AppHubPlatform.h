@@ -33,6 +33,7 @@ using PlatformResult = LaunchResult;
 
 LaunchResult openAppBundle(std::string_view appPath);
 LaunchResult openNewAppBundleInstance(std::string_view appPath);
+LaunchResult closeAppBundle(std::string_view appPath);
 PlatformResult directInstallAppBundle(
     const std::filesystem::path& root,
     const eacp::Updater::RemoteAppManifest& manifest,
