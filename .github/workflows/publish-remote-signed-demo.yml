@@ -28,13 +28,19 @@ jobs:
       VERSION: ${{ inputs.version }}
       RELEASE_TAG: ${{ inputs.release_tag }}
       RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ inputs.release_tag }}
-      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN || vars.OP_SERVICE_ACCOUNT_TOKEN }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
       - uses: actions/checkout@v6
 
       - uses: 1password/install-cli-action@v3
+
+      - name: Verify 1Password service account auth
+        run: |
+          set -euo pipefail
+          test -n "${OP_SERVICE_ACCOUNT_TOKEN:-}"
+          op whoami
 
       - name: Capture existing hub artifact hash
         if: inputs.include_hub != 'true'
