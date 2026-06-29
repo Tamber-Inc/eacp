@@ -31,6 +31,7 @@ if (APPLE)
 
     set_target_properties(RealUpdateDemo
         PROPERTIES
+            EACP_CATALOG_EXCLUDE TRUE
             OUTPUT_NAME "Tamber Local Update Demo"
             MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
             MACOSX_BUNDLE_GUI_IDENTIFIER "${EACP_REAL_UPDATE_DEMO_BUNDLE_ID}"

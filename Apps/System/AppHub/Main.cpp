@@ -291,11 +291,7 @@ Updater::ProductCatalog writeDevCatalog(const fs::path& root, bool updateEditor)
 
 Updater::ProductCatalog loadOrCreateCatalog(const fs::path& root)
 {
-    auto raw = readFile(catalogPath(root));
-    if (!raw.empty())
-        return Updater::parseCatalogJson(raw);
-
-    return writeDevCatalog(root, false);
+    return Api::Detail::loadOrCreateCatalog(root);
 }
 
 Updater::MockPrivilegedHelper makeHelper(const fs::path& root)
@@ -415,11 +411,7 @@ void printUsage()
         << "Default feeds:\n"
         << "  Demo App: " << defaultDemoManifestUrl << "\n"
         << "  AppHub:   " << defaultHubManifestUrl << "\n\n"
-        << "Products:\n"
-        << "  " << editorId << "\n"
-        << "  " << captureId << "\n"
-        << "  " << runtimeId << "\n"
-        << "  " << modelId << "\n";
+        << "Use `AppHub [--root <path>] list` to print the selected catalog.\n";
 }
 
 void printStatus(const fs::path& root,
