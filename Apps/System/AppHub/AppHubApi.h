@@ -1202,6 +1202,11 @@ private:
         auto catalog = Detail::loadCatalog(root, preferRemote);
         auto helper = Detail::makeMockHelper(root);
         auto receipts = helper.receipts();
+        auto knownHubApp = RemoteAppStatus();
+        {
+            auto lock = std::lock_guard(stateMutex);
+            knownHubApp = state.hubApp;
+        }
 
         auto next = HubState();
         next.hubVersion = EACP_APPHUB_VERSION;
@@ -1215,6 +1220,8 @@ private:
         next.hubApp = remoteStatusFromLocal(
             AppHub::installedHubAppExecutablePath().string(),
             "AppHub");
+        next.hubApp = preserveKnownRemoteStatus(std::move(next.hubApp),
+                                                knownHubApp);
         next.operation.detail = detail.empty() ? next.operation.detail : detail;
 
         for (const auto& product: catalog.products)
@@ -1298,6 +1305,33 @@ private:
                              + " is available";
         else
             status.message = status.name + " is up to date";
+        return status;
+    }
+
+    RemoteAppStatus preserveKnownRemoteStatus(
+        RemoteAppStatus status,
+        const RemoteAppStatus& knownRemoteStatus) const
+    {
+        if (knownRemoteStatus.latestVersion.empty())
+            return status;
+
+        status.productId = knownRemoteStatus.productId;
+        if (!knownRemoteStatus.name.empty())
+            status.name = knownRemoteStatus.name;
+        status.latestVersion = knownRemoteStatus.latestVersion;
+        status.updateAvailable =
+            status.installed
+            && Updater::isNewerVersion(status.latestVersion,
+                                       status.installedVersion);
+
+        if (!status.installed)
+            status.message = status.name + " is not installed";
+        else if (status.updateAvailable)
+            status.message = status.name + " " + status.latestVersion
+                             + " is available";
+        else
+            status.message = status.name + " is up to date";
+
         return status;
     }
 
