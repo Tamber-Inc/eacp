@@ -1,3 +1,8 @@
+set(EACP_APPHUB_VERSION
+    "1.0.0"
+    CACHE STRING
+    "Version baked into the AppHub bundle")
+
 set(EACP_APPHUB_BUNDLE_ID "com.tamber.AppHub" CACHE STRING "AppHub bundle identifier")
 set(EACP_APPHUB_HELPER_LABEL
     "com.tamber.AppHub.PrivilegedHelper"
@@ -24,6 +29,7 @@ set_default_target_setting(AppHub)
 
 target_compile_definitions(AppHub
     PRIVATE
+        EACP_APPHUB_VERSION="${EACP_APPHUB_VERSION}"
         EACP_APPHUB_HELPER_LABEL="${EACP_APPHUB_HELPER_LABEL}"
 )
 
@@ -46,8 +52,8 @@ if (APPLE)
             MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/AppHubInfo.plist"
             MACOSX_BUNDLE_GUI_IDENTIFIER "${EACP_APPHUB_BUNDLE_ID}"
             MACOSX_BUNDLE_BUNDLE_NAME "Tamber App Hub"
-            MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0.0"
-            MACOSX_BUNDLE_BUNDLE_VERSION "1")
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${EACP_APPHUB_VERSION}"
+            MACOSX_BUNDLE_BUNDLE_VERSION "${EACP_APPHUB_VERSION}")
 
     add_executable(AppHubPrivilegedHelper PrivilegedHelper/Main.cpp)
     target_link_libraries(AppHubPrivilegedHelper PRIVATE eacp-updater)

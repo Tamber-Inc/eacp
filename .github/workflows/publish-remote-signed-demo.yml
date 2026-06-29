@@ -15,6 +15,10 @@ on:
         description: Publish a freshly built AppHub artifact as well as the Demo App.
         required: true
         default: 'true'
+      publish_hub_update:
+        description: Publish AppHub itself as a remote update instead of publishing the Demo App.
+        required: true
+        default: 'false'
 
 permissions:
   contents: write
@@ -28,7 +32,7 @@ jobs:
       VERSION: ${{ inputs.version }}
       RELEASE_TAG: ${{ inputs.release_tag }}
       RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ inputs.release_tag }}
-      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN || vars.OP_SERVICE_ACCOUNT_TOKEN }}
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -36,14 +40,8 @@ jobs:
 
       - uses: 1password/install-cli-action@v3
 
-      - name: Verify 1Password service account auth
-        run: |
-          set -euo pipefail
-          test -n "${OP_SERVICE_ACCOUNT_TOKEN:-}"
-          op whoami
-
       - name: Capture existing hub artifact hash
-        if: inputs.include_hub != 'true'
+        if: inputs.include_hub != 'true' && inputs.publish_hub_update != 'true'
         run: |
           set -euo pipefail
           mkdir -p dist/remote-signed-demo
@@ -59,7 +57,7 @@ jobs:
           fi
 
       - name: Build signed release assets
-        if: inputs.include_hub == 'true'
+        if: inputs.include_hub == 'true' && inputs.publish_hub_update != 'true'
         run: >
           op run
           --env-file=.github/op/tamber-signing.env
@@ -67,15 +65,23 @@ jobs:
           node Scripts/package-remote-signed-demo-assets.mjs
 
       - name: Build and upload signed Demo App update
-        if: inputs.include_hub != 'true'
+        if: inputs.include_hub != 'true' && inputs.publish_hub_update != 'true'
         run: >
           op run
           --env-file=.github/op/tamber-signing.env
           --
           node Scripts/publish-remote-demo-app-version.mjs
 
+      - name: Build and upload signed AppHub update
+        if: inputs.publish_hub_update == 'true'
+        run: >
+          op run
+          --env-file=.github/op/tamber-signing.env
+          --
+          node Scripts/publish-remote-hub-version.mjs
+
       - name: Create or update release
-        if: inputs.include_hub == 'true'
+        if: inputs.include_hub == 'true' && inputs.publish_hub_update != 'true'
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" dist/remote-signed-demo/* --clobber
@@ -87,7 +93,7 @@ jobs:
           fi
 
       - name: Verify hub artifact stayed unchanged
-        if: inputs.include_hub != 'true'
+        if: inputs.include_hub != 'true' && inputs.publish_hub_update != 'true'
         run: |
           set -euo pipefail
           gh release download "$RELEASE_TAG" \
@@ -99,7 +105,8 @@ jobs:
           test "$current" = "$before"
           echo "AppHub artifact unchanged: $current"
 
-      - name: Smoke install from published internet artifacts
+      - name: Smoke install Demo App from published internet artifacts
+        if: inputs.publish_hub_update != 'true'
         run: |
           set -euo pipefail
 
@@ -124,3 +131,31 @@ jobs:
           installed_version="$("$installed" --version)"
           test "$installed_version" = "$VERSION"
           echo "Installed remote signed Demo App ${installed_version} from ${manifest_url}"
+
+      - name: Smoke install AppHub from published internet artifacts
+        if: inputs.publish_hub_update == 'true'
+        run: |
+          set -euo pipefail
+
+          smoke_root="$(mktemp -d)"
+          apphub_zip="${smoke_root}/AppHub-remote-demo.app.zip"
+          manifest_url="${RELEASE_BASE_URL}/hub-manifest.json"
+
+          curl --fail --location --silent --show-error \
+            "${RELEASE_BASE_URL}/AppHub-remote-demo.app.zip" \
+            --output "$apphub_zip"
+
+          ditto -x -k "$apphub_zip" "$smoke_root"
+          codesign --verify --strict --verbose=2 "${smoke_root}/AppHub.app"
+
+          "${smoke_root}/AppHub.app/Contents/MacOS/AppHub" \
+            --root "${smoke_root}/hub-state" \
+            remote-install \
+            --manifest-url "$manifest_url"
+
+          installed="/Applications/AppHub.app/Contents/MacOS/AppHub"
+          test -x "$installed"
+          installed_version="$("$installed" --version)"
+          test "$installed_version" = "$VERSION"
+          codesign --verify --strict --verbose=2 /Applications/AppHub.app
+          echo "Installed remote signed AppHub ${installed_version} from ${manifest_url}"

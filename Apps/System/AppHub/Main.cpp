@@ -19,6 +19,10 @@
 namespace fs = std::filesystem;
 namespace Updater = eacp::Updater;
 
+#ifndef EACP_APPHUB_VERSION
+#define EACP_APPHUB_VERSION "0.0.0"
+#endif
+
 #if !defined(_WIN32)
 extern char** environ;
 #endif
@@ -275,6 +279,10 @@ std::optional<CliOptions> parseArgs(int argc, char* argv[])
         {
             options.command = "help";
         }
+        else if (arg == "--version")
+        {
+            options.command = "version";
+        }
         else if (options.command == "tui")
         {
             options.command = arg;
@@ -374,7 +382,8 @@ void printUsage()
         << "  AppHub [--root <path>] bless-helper\n"
         << "  AppHub [--root <path>] remote-install --manifest-url <url>\n"
         << "  AppHub [--root <path>] update\n"
-        << "  AppHub [--root <path>] remove <product-id>\n\n"
+        << "  AppHub [--root <path>] remove <product-id>\n"
+        << "  AppHub --version\n\n"
         << "Products:\n"
         << "  " << editorId << "\n"
         << "  " << captureId << "\n"
@@ -825,6 +834,11 @@ int main(int argc, char* argv[])
     if (command == "help")
     {
         printUsage();
+        return 0;
+    }
+    if (command == "version")
+    {
+        std::cout << EACP_APPHUB_VERSION << "\n";
         return 0;
     }
     if (command == "tui")
