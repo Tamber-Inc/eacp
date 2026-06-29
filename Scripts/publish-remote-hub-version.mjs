@@ -15,6 +15,7 @@ import {
 import {
   ensureTamberSigningIdentity,
   signPath,
+  verifyAppHubDeploymentTarget,
   verifyAppHubPrivilegedHelper,
   verifyCodeSignature,
 } from './lib/macos-signing.mjs';
@@ -27,6 +28,7 @@ const releaseBaseUrl = env(
 );
 const outDir = env('OUT_DIR', join(repoRoot, 'dist', 'remote-hub-update'));
 const buildDir = env('BUILD_DIR', join(repoRoot, `build-remote-hub-update-${version}`));
+const macOSDeploymentTarget = env('EACP_MACOS_DEPLOYMENT_TARGET', '11.0');
 
 const appHubAppName = 'AppHub.app';
 const appHubBinaryName = 'AppHub';
@@ -45,6 +47,7 @@ run('cmake', [
   '-B',
   buildDir,
   '-DCMAKE_BUILD_TYPE=Release',
+  `-DCMAKE_OSX_DEPLOYMENT_TARGET=${macOSDeploymentTarget}`,
   `-DEACP_APPHUB_VERSION=${version}`,
 ]);
 
@@ -63,6 +66,7 @@ const appHubHelper = join(
 log(`Sign AppHub ${version}`);
 signPath(appHubHelper);
 signPath(appHubApp);
+verifyAppHubDeploymentTarget(appHubApp, macOSDeploymentTarget);
 verifyAppHubPrivilegedHelper(appHubApp);
 
 log('Verify AppHub version');
@@ -78,6 +82,7 @@ cleanDir(packagedVerifyDir);
 run('ditto', ['-x', '-k', join(outDir, appHubZip), packagedVerifyDir]);
 const packagedAppHub = join(packagedVerifyDir, appHubAppName);
 verifyCodeSignature(packagedAppHub);
+verifyAppHubDeploymentTarget(packagedAppHub, macOSDeploymentTarget);
 verifyAppHubPrivilegedHelper(packagedAppHub);
 
 const appHubSha = sha256File(join(outDir, appHubZip));

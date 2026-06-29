@@ -15,8 +15,10 @@ import {
 import {
   ensureTamberSigningIdentity,
   signPath,
+  verifyAppHubDeploymentTarget,
   verifyAppHubPrivilegedHelper,
   verifyCodeSignature,
+  verifyMachODeploymentTargetAtMost,
 } from './lib/macos-signing.mjs';
 
 const version = env('VERSION', '1.0.0');
@@ -27,6 +29,7 @@ const releaseBaseUrl = env(
 );
 const outDir = env('OUT_DIR', join(repoRoot, 'dist', 'remote-signed-demo'));
 const buildDir = env('BUILD_DIR', join(repoRoot, 'build-remote-signed-demo'));
+const macOSDeploymentTarget = env('EACP_MACOS_DEPLOYMENT_TARGET', '11.0');
 
 const appHubZip = 'AppHub-remote-demo.app.zip';
 const demoZip = `TamberLocalUpdateDemo-${version}.app.zip`;
@@ -46,6 +49,7 @@ run('cmake', [
   '-B',
   buildDir,
   '-DCMAKE_BUILD_TYPE=Release',
+  `-DCMAKE_OSX_DEPLOYMENT_TARGET=${macOSDeploymentTarget}`,
   `-DEACP_REAL_UPDATE_DEMO_VERSION=${version}`,
 ]);
 
@@ -65,10 +69,15 @@ const demoApp = join(buildDir, 'Apps', 'System', 'RealUpdateDemo', demoAppName);
 log('Sign AppHub helper and app');
 signPath(appHubHelper);
 signPath(appHubApp);
+verifyAppHubDeploymentTarget(appHubApp, macOSDeploymentTarget);
 verifyAppHubPrivilegedHelper(appHubApp);
 
 log('Sign Demo App');
 signPath(demoApp);
+verifyMachODeploymentTargetAtMost(
+  join(demoApp, 'Contents', 'MacOS', demoBinaryName),
+  macOSDeploymentTarget,
+);
 
 log('Verify Demo App version');
 run(join(demoApp, 'Contents', 'MacOS', demoBinaryName), ['--version']);
@@ -84,6 +93,7 @@ cleanDir(packagedVerifyDir);
 run('ditto', ['-x', '-k', join(outDir, appHubZip), packagedVerifyDir]);
 const packagedAppHub = join(packagedVerifyDir, 'AppHub.app');
 verifyCodeSignature(packagedAppHub);
+verifyAppHubDeploymentTarget(packagedAppHub, macOSDeploymentTarget);
 verifyAppHubPrivilegedHelper(packagedAppHub);
 
 const demoSha = sha256File(join(outDir, demoZip));

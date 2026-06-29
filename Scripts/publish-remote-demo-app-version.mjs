@@ -12,7 +12,11 @@ import {
   sha256File,
   writeJson,
 } from './lib/cli.mjs';
-import { ensureTamberSigningIdentity, signPath } from './lib/macos-signing.mjs';
+import {
+  ensureTamberSigningIdentity,
+  signPath,
+  verifyMachODeploymentTargetAtMost,
+} from './lib/macos-signing.mjs';
 
 const version = env('VERSION', '2.0.0');
 const releaseTag = env('RELEASE_TAG', 'remote-demo-v1');
@@ -22,6 +26,7 @@ const releaseBaseUrl = env(
 );
 const outDir = env('OUT_DIR', join(repoRoot, 'dist', 'remote-demo-app-update'));
 const buildDir = env('BUILD_DIR', join(repoRoot, `build-remote-demo-app-update-${version}`));
+const macOSDeploymentTarget = env('EACP_MACOS_DEPLOYMENT_TARGET', '11.0');
 
 const demoAppName = 'Tamber Local Update Demo.app';
 const demoBinaryName = 'Tamber Local Update Demo';
@@ -40,6 +45,7 @@ run('cmake', [
   '-B',
   buildDir,
   '-DCMAKE_BUILD_TYPE=Release',
+  `-DCMAKE_OSX_DEPLOYMENT_TARGET=${macOSDeploymentTarget}`,
   `-DEACP_REAL_UPDATE_DEMO_VERSION=${version}`,
 ]);
 
@@ -50,6 +56,10 @@ const demoApp = join(buildDir, 'Apps', 'System', 'RealUpdateDemo', demoAppName);
 
 log(`Sign Demo App ${version}`);
 signPath(demoApp);
+verifyMachODeploymentTargetAtMost(
+  join(demoApp, 'Contents', 'MacOS', demoBinaryName),
+  macOSDeploymentTarget,
+);
 
 log('Verify Demo App version');
 run(join(demoApp, 'Contents', 'MacOS', demoBinaryName), ['--version']);

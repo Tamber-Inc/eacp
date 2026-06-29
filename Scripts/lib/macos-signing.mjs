@@ -1,5 +1,5 @@
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 
 import { capture, fileExists, requireEnv, requireMacOS, run } from './cli.mjs';
@@ -113,6 +113,35 @@ export function verifyAppHubPrivilegedHelper(
   ));
 }
 
+export function verifyMachODeploymentTargetAtMost(path, maximumVersion) {
+  const result = capture('otool', ['-l', path]);
+  const match = result.stdout.match(/^\s*minos\s+([0-9]+(?:\.[0-9]+)*)$/m);
+  if (!match) {
+    throw new Error(`Could not read Mach-O deployment target for ${path}`);
+  }
+
+  if (compareVersions(match[1], maximumVersion) > 0) {
+    throw new Error(
+      `${basename(path)} targets macOS ${match[1]}, expected ${maximumVersion} or older`,
+    );
+  }
+}
+
+export function verifyAppHubDeploymentTarget(
+  appBundle,
+  maximumVersion,
+  helperLabel = 'com.tamber.AppHub.PrivilegedHelper',
+) {
+  verifyMachODeploymentTargetAtMost(
+    join(appBundle, 'Contents', 'MacOS', 'AppHub'),
+    maximumVersion,
+  );
+  verifyMachODeploymentTargetAtMost(
+    join(appBundle, 'Contents', 'Library', 'LaunchServices', helperLabel),
+    maximumVersion,
+  );
+}
+
 export function adHocSignPath(path) {
   run('codesign', ['--force', '--deep', '--sign', '-', path]);
 }
@@ -122,6 +151,19 @@ function hasSigningIdentity(keychainPath) {
     check: false,
   });
   return result.stdout.includes(`"${process.env.APPLE_SIGNING_IDENTITY}"`);
+}
+
+function compareVersions(left, right) {
+  const l = left.split('.').map((part) => Number.parseInt(part, 10));
+  const r = right.split('.').map((part) => Number.parseInt(part, 10));
+  const count = Math.max(l.length, r.length);
+  for (let index = 0; index < count; index += 1) {
+    const lv = l[index] ?? 0;
+    const rv = r[index] ?? 0;
+    if (lv < rv) return -1;
+    if (lv > rv) return 1;
+  }
+  return 0;
 }
 
 function ensureKeychainSearchList(keychainPath) {

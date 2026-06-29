@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.31)
+
+if (APPLE AND NOT IOS AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING
+            "Minimum macOS version targeted by this eacp build")
+endif ()
+
 project(eacp LANGUAGES C CXX)
 
 if (CMAKE_SIZEOF_VOID_P EQUAL 4)
