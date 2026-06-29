@@ -38,7 +38,7 @@ permissions:
 jobs:
   publish:
     name: Build, Sign, Publish, Smoke Install
-    runs-on: macos-15
+    runs-on: macos-15-xlarge
 
     env:
       VERSION: ${{ inputs.version }}
