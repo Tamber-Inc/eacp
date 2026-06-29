@@ -15,6 +15,7 @@
 
 #include <chrono>
 #include <cctype>
+#include <cstdlib>
 #include <cstdint>
 #include <ctime>
 #include <filesystem>
@@ -45,6 +46,10 @@
 #ifndef EACP_APPHUB_CATALOG_URL
 #define EACP_APPHUB_CATALOG_URL \
     "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/apphub-catalog.json"
+#endif
+
+#ifndef EACP_APPHUB_DEV_CATALOG_PATH
+#define EACP_APPHUB_DEV_CATALOG_PATH ""
 #endif
 
 namespace Api
@@ -213,6 +218,22 @@ constexpr std::string_view modelId = "shared.clap";
 constexpr std::string_view defaultDemoManifestUrl = EACP_APPHUB_DEMO_MANIFEST_URL;
 constexpr std::string_view defaultHubManifestUrl = EACP_APPHUB_MANIFEST_URL;
 constexpr std::string_view defaultCatalogUrl = EACP_APPHUB_CATALOG_URL;
+constexpr std::string_view devCatalogPath = EACP_APPHUB_DEV_CATALOG_PATH;
+
+inline std::string selectedDevCatalogPath()
+{
+    if (auto* overridePath = std::getenv("EACP_APPHUB_DEV_CATALOG_PATH");
+        overridePath != nullptr)
+    {
+        return overridePath;
+    }
+    return std::string(devCatalogPath);
+}
+
+inline bool hasDevCatalog()
+{
+    return !selectedDevCatalogPath().empty();
+}
 
 inline fs::path defaultRoot()
 {
@@ -428,6 +449,17 @@ inline Updater::ProductCatalog writeDevCatalog(const fs::path& root,
 
 inline Updater::ProductCatalog loadOrCreateCatalog(const fs::path& root)
 {
+    auto selectedCatalog = selectedDevCatalogPath();
+    if (!selectedCatalog.empty())
+    {
+        auto generated = readFile(fs::path(selectedCatalog));
+        if (!generated.empty())
+        {
+            writeFile(catalogPath(root), generated);
+            return Updater::parseCatalogJson(generated);
+        }
+    }
+
     auto raw = readFile(catalogPath(root));
     if (!raw.empty())
         return Updater::parseCatalogJson(raw);
@@ -520,7 +552,7 @@ inline std::optional<Updater::ProductCatalog> fetchRemoteCatalog(
 inline Updater::ProductCatalog loadCatalog(const fs::path& root,
                                            bool preferRemote = true)
 {
-    if (preferRemote)
+    if (preferRemote && !hasDevCatalog())
     {
         if (auto remote = fetchRemoteCatalog(root))
             return *remote;
@@ -544,6 +576,13 @@ inline Updater::ProductCatalog loadCatalog(const fs::path& root,
 inline Updater::ProductCatalog loadCatalogContaining(const fs::path& root,
                                                      const std::string& productId)
 {
+    auto local = loadCatalog(root, false);
+    if (Updater::findProduct(local, productId) != nullptr)
+        return local;
+
+    if (hasDevCatalog())
+        return local;
+
     for (auto attempt = 0; attempt < 12; ++attempt)
     {
         if (auto remote = fetchRemoteCatalog(root))
