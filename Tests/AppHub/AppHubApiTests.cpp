@@ -350,10 +350,10 @@ auto tInstallProductRepairsMissingPrivilegedHelper =
         check(receipt->version == "9.9.7");
 };
 
-auto tLoadsConfiguredDevCatalog =
-    test("AppHub/loadsConfiguredDevCatalog") = []
+auto tLoadsConfiguredManualCatalog =
+    test("AppHub/loadsConfiguredManualCatalog") = []
 {
-    auto root = testRoot("configured-dev-catalog");
+    auto root = testRoot("configured-manual-catalog");
     auto catalogPath = root / "generated" / "apphub-catalog.json";
 
     auto product = Updater::Product();
@@ -378,7 +378,7 @@ auto tLoadsConfiguredDevCatalog =
     writeCatalogAt(catalogPath, catalog);
 
     auto catalogOverride = ScopedEnvironmentVariable(
-        "EACP_APPHUB_DEV_CATALOG_PATH", catalogPath.string());
+        "EACP_APPHUB_MANUAL_CATALOG_PATH", catalogPath.string());
     auto api = Api::AppHubApi(root);
     auto state = api.getHubState();
 

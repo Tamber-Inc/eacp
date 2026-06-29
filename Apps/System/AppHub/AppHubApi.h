@@ -8,6 +8,7 @@
 #include <eacp/Core/Threads/EventLoop.h>
 #include <eacp/Core/Utils/Containers.h>
 #include <eacp/Core/Utils/SHA256.h>
+#include <eacp/Hub/Hub.h>
 #include <eacp/Network/HTTP/Http.h>
 #include <eacp/Updater/Updater.h>
 
@@ -48,13 +49,18 @@
     "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/apphub-catalog.json"
 #endif
 
+#ifndef EACP_APPHUB_MANUAL_CATALOG_PATH
+#define EACP_APPHUB_MANUAL_CATALOG_PATH ""
+#endif
+
 #ifndef EACP_APPHUB_DEV_CATALOG_PATH
-#define EACP_APPHUB_DEV_CATALOG_PATH ""
+#define EACP_APPHUB_DEV_CATALOG_PATH EACP_APPHUB_MANUAL_CATALOG_PATH
 #endif
 
 namespace Api
 {
 namespace fs = std::filesystem;
+namespace Hub = eacp::Hub;
 namespace HTTP = eacp::HTTP;
 namespace Updater = eacp::Updater;
 
@@ -218,7 +224,8 @@ constexpr std::string_view modelId = "shared.clap";
 constexpr std::string_view defaultDemoManifestUrl = EACP_APPHUB_DEMO_MANIFEST_URL;
 constexpr std::string_view defaultHubManifestUrl = EACP_APPHUB_MANIFEST_URL;
 constexpr std::string_view defaultCatalogUrl = EACP_APPHUB_CATALOG_URL;
-constexpr std::string_view devCatalogPath = EACP_APPHUB_DEV_CATALOG_PATH;
+constexpr std::string_view manualCatalogPath = EACP_APPHUB_MANUAL_CATALOG_PATH;
+constexpr std::string_view legacyDevCatalogPath = EACP_APPHUB_DEV_CATALOG_PATH;
 
 inline bool helperErrorNeedsRepair(const std::string& message)
 {
@@ -227,19 +234,26 @@ inline bool helperErrorNeedsRepair(const std::string& message)
         || message.find("privileged helper timed out") != std::string::npos;
 }
 
-inline std::string selectedDevCatalogPath()
+inline std::string selectedManualCatalogPath()
 {
-    if (auto* overridePath = std::getenv("EACP_APPHUB_DEV_CATALOG_PATH");
+    if (auto* overridePath = std::getenv("EACP_APPHUB_MANUAL_CATALOG_PATH");
         overridePath != nullptr)
     {
         return overridePath;
     }
-    return std::string(devCatalogPath);
+    if (auto* legacyOverridePath = std::getenv("EACP_APPHUB_DEV_CATALOG_PATH");
+        legacyOverridePath != nullptr)
+    {
+        return legacyOverridePath;
+    }
+    if (!manualCatalogPath.empty())
+        return std::string(manualCatalogPath);
+    return std::string(legacyDevCatalogPath);
 }
 
-inline bool hasDevCatalog()
+inline bool hasManualCatalog()
 {
-    return !selectedDevCatalogPath().empty();
+    return !selectedManualCatalogPath().empty();
 }
 
 inline fs::path defaultRoot()
@@ -269,12 +283,12 @@ inline fs::path runningPath(const fs::path& root, const std::string& productId)
 
 inline fs::path remoteDownloadRoot(const fs::path& root)
 {
-    return root / "remote-downloads";
+    return Hub::remoteDownloadRoot(root);
 }
 
 inline fs::path remoteCatalogPath(const fs::path& root)
 {
-    return remoteDownloadRoot(root) / "apphub-catalog.json";
+    return Hub::cachedCatalogPath(root);
 }
 
 inline void writeFile(const fs::path& path, const std::string& text)
@@ -456,7 +470,7 @@ inline Updater::ProductCatalog writeDevCatalog(const fs::path& root,
 
 inline Updater::ProductCatalog loadOrCreateCatalog(const fs::path& root)
 {
-    auto selectedCatalog = selectedDevCatalogPath();
+    auto selectedCatalog = selectedManualCatalogPath();
     if (!selectedCatalog.empty())
     {
         auto generated = readFile(fs::path(selectedCatalog));
@@ -540,67 +554,35 @@ inline std::optional<Updater::RemoteAppManifest> fetchRemoteManifest(
 inline std::optional<Updater::ProductCatalog> fetchRemoteCatalog(
     const fs::path& root)
 {
-    auto response = HTTP::Request(std::string(defaultCatalogUrl)).perform();
-    if (response.statusCode < 200 || response.statusCode >= 300)
-        return std::nullopt;
-
-    try
-    {
-        auto catalog = Updater::parseCatalogJson(response.content);
-        writeFile(remoteCatalogPath(root), response.content);
-        return catalog;
-    }
-    catch (...)
-    {
-        return std::nullopt;
-    }
+    return Hub::fetchRemoteCatalog({.stateRoot = root,
+                                    .manualCatalogPath =
+                                        fs::path(selectedManualCatalogPath()),
+                                    .remoteCatalogUrl =
+                                        std::string(defaultCatalogUrl)});
 }
 
 inline Updater::ProductCatalog loadCatalog(const fs::path& root,
                                            bool preferRemote = true)
 {
-    if (preferRemote && !hasDevCatalog())
-    {
-        if (auto remote = fetchRemoteCatalog(root))
-            return *remote;
-    }
-
-    auto remoteRaw = readFile(remoteCatalogPath(root));
-    if (!remoteRaw.empty())
-    {
-        try
-        {
-            return Updater::parseCatalogJson(remoteRaw);
-        }
-        catch (...)
-        {
-        }
-    }
-
-    return loadOrCreateCatalog(root);
+    auto config = Hub::CatalogConfig {
+        .stateRoot = root,
+        .manualCatalogPath = fs::path(selectedManualCatalogPath()),
+        .remoteCatalogUrl = std::string(defaultCatalogUrl)};
+    return Hub::loadCatalog(config,
+                            {.preferRemote = preferRemote && !hasManualCatalog()},
+                            [&] { return loadOrCreateCatalog(root); });
 }
 
 inline Updater::ProductCatalog loadCatalogContaining(const fs::path& root,
                                                      const std::string& productId)
 {
-    auto local = loadCatalog(root, false);
-    if (Updater::findProduct(local, productId) != nullptr)
-        return local;
-
-    if (hasDevCatalog())
-        return local;
-
-    for (auto attempt = 0; attempt < 12; ++attempt)
-    {
-        if (auto remote = fetchRemoteCatalog(root))
-        {
-            if (Updater::findProduct(*remote, productId) != nullptr)
-                return *remote;
-        }
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-    }
-
-    return loadCatalog(root, false);
+    auto config = Hub::CatalogConfig {
+        .stateRoot = root,
+        .manualCatalogPath = fs::path(selectedManualCatalogPath()),
+        .remoteCatalogUrl = std::string(defaultCatalogUrl)};
+    return Hub::loadCatalogContaining(config,
+                                      productId,
+                                      [&] { return loadOrCreateCatalog(root); });
 }
 
 inline std::string nowUtc()

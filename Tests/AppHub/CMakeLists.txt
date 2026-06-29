@@ -1,6 +1,6 @@
 nano_add_executable(AppHubTests
         SOURCES AppHubApiTests.cpp
-        TARGETS eacp-updater eacp-network)
+        TARGETS eacp-hub eacp-updater eacp-network)
 
 target_include_directories(AppHubTests PRIVATE
         ${CMAKE_SOURCE_DIR}/Apps/System/AppHub)

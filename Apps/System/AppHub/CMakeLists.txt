@@ -24,6 +24,14 @@ set(EACP_APPHUB_CATALOG_URL
     "https://github.com/Tamber-Inc/eacp/releases/download/remote-demo-v1/apphub-catalog.json"
     CACHE STRING
     "Default AppHub remote product catalog URL")
+set(EACP_APPHUB_DEV_CATALOG_PATH
+    ""
+    CACHE STRING
+    "Legacy alias for EACP_APPHUB_MANUAL_CATALOG_PATH")
+set(EACP_APPHUB_MANUAL_CATALOG_PATH
+    "${EACP_APPHUB_DEV_CATALOG_PATH}"
+    CACHE STRING
+    "Optional AppHub manual product catalog path; overrides remote catalog fetches")
 set(EACP_APPHUB_APP_SIGNING_REQUIREMENT
     "identifier \"${EACP_APPHUB_BUNDLE_ID}\" and anchor apple generic"
     CACHE STRING
@@ -55,12 +63,12 @@ eacp_add_webview_app(AppHub
     CATEGORY       AppHubWebApp
     BUNDLE_ID      ${EACP_APPHUB_BUNDLE_ID}
     BUNDLE_NAME    "Tamber AppHub"
-    LINK_LIBRARIES eacp-updater eacp-network
+    LINK_LIBRARIES eacp-hub eacp-updater eacp-network
     REACT)
 
 set_target_properties(AppHub PROPERTIES EACP_CATALOG_EXCLUDE TRUE)
 target_sources(AppHub PRIVATE App.h AppHubPlatform.h)
-target_link_libraries(AppHub PRIVATE eacp-updater eacp-network)
+target_link_libraries(AppHub PRIVATE eacp-hub eacp-updater eacp-network)
 eacp_set_gui_subsystem(AppHub)
 
 if (TARGET AppHubSchema_Codegen)
@@ -71,7 +79,9 @@ if (TARGET AppHubSchema_Codegen)
             EACP_APPHUB_HELPER_LABEL="${EACP_APPHUB_HELPER_LABEL}"
             EACP_APPHUB_DEMO_MANIFEST_URL="${EACP_APPHUB_DEMO_MANIFEST_URL}"
             EACP_APPHUB_MANIFEST_URL="${EACP_APPHUB_MANIFEST_URL}"
-            EACP_APPHUB_CATALOG_URL="${EACP_APPHUB_CATALOG_URL}")
+            EACP_APPHUB_CATALOG_URL="${EACP_APPHUB_CATALOG_URL}"
+            EACP_APPHUB_MANUAL_CATALOG_PATH="${EACP_APPHUB_MANUAL_CATALOG_PATH}"
+            EACP_APPHUB_DEV_CATALOG_PATH="${EACP_APPHUB_DEV_CATALOG_PATH}")
 endif ()
 
 set_default_target_setting(AppHub)
@@ -83,6 +93,8 @@ target_compile_definitions(AppHub
         EACP_APPHUB_DEMO_MANIFEST_URL="${EACP_APPHUB_DEMO_MANIFEST_URL}"
         EACP_APPHUB_MANIFEST_URL="${EACP_APPHUB_MANIFEST_URL}"
         EACP_APPHUB_CATALOG_URL="${EACP_APPHUB_CATALOG_URL}"
+        EACP_APPHUB_MANUAL_CATALOG_PATH="${EACP_APPHUB_MANUAL_CATALOG_PATH}"
+        EACP_APPHUB_DEV_CATALOG_PATH="${EACP_APPHUB_DEV_CATALOG_PATH}"
 )
 
 if (APPLE)
