@@ -11,6 +11,12 @@ export const catalogProducts = {
     kind: 'Model',
     bundleName: '',
   },
+  jsonDemo: {
+    id: 'shared.json-view-demo',
+    name: 'Shared JSON Demo Data',
+    kind: 'Blob',
+    bundleName: '',
+  },
   maze: {
     id: 'com.eacp.maze',
     name: 'Maze',
@@ -28,6 +34,26 @@ export const catalogProducts = {
     target: 'Teapot',
     appPath: ['Apps', 'GPU', 'Teapot', 'Teapot.app'],
     binaryName: 'Teapot',
+  },
+  jsonView1: {
+    id: 'com.eacp.jsonview1',
+    name: 'JsonView1',
+    kind: 'App',
+    bundleName: 'JsonView1.app',
+    target: 'JsonView1',
+    appPath: ['Apps', 'System', 'JsonView', 'JsonView1.app'],
+    binaryName: 'JsonView1',
+    dependencies: ['shared.json-view-demo'],
+  },
+  jsonView2: {
+    id: 'com.eacp.jsonview2',
+    name: 'JsonView2',
+    kind: 'App',
+    bundleName: 'JsonView2.app',
+    target: 'JsonView2',
+    appPath: ['Apps', 'System', 'JsonView', 'JsonView2.app'],
+    binaryName: 'JsonView2',
+    dependencies: ['shared.json-view-demo'],
   },
 };
 
@@ -120,8 +146,11 @@ export function sortProducts(products) {
   const order = new Map([
     [catalogProducts.runtime.id, 0],
     [catalogProducts.model.id, 1],
-    [catalogProducts.maze.id, 2],
-    [catalogProducts.teapot.id, 3],
+    [catalogProducts.jsonDemo.id, 2],
+    [catalogProducts.maze.id, 3],
+    [catalogProducts.teapot.id, 4],
+    [catalogProducts.jsonView1.id, 5],
+    [catalogProducts.jsonView2.id, 6],
   ]);
   return [...products].sort((left, right) => {
     const leftOrder = order.get(left.id) ?? 100;

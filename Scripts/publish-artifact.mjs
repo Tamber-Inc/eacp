@@ -131,6 +131,7 @@ function productFor(path) {
   }
 
   const name = basename(path).toLowerCase();
+  if (name.endsWith('.json')) return catalogProducts.jsonDemo;
   if (name.includes('clap')) return catalogProducts.model;
   if (name.includes('onnx')) return catalogProducts.runtime;
 

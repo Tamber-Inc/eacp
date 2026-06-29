@@ -1,0 +1,10 @@
+{
+  "schema": "com.eacp.JsonViewDemo",
+  "version": "1.0.0",
+  "message": "This JSON blob is installed once and viewed by JsonView1 and JsonView2.",
+  "sharedProductId": "shared.json-view-demo",
+  "consumers": [
+    "com.eacp.jsonview1",
+    "com.eacp.jsonview2"
+  ]
+}

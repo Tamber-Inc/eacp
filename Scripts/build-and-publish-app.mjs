@@ -52,8 +52,14 @@ function catalogApp(name) {
   if (name === 'teapot' || name === 'com.eacp.teapot') {
     return { productId: 'com.eacp.teapot', target: 'Teapot' };
   }
+  if (name === 'jsonview1' || name === 'com.eacp.jsonview1') {
+    return { productId: 'com.eacp.jsonview1', target: 'JsonView1' };
+  }
+  if (name === 'jsonview2' || name === 'com.eacp.jsonview2') {
+    return { productId: 'com.eacp.jsonview2', target: 'JsonView2' };
+  }
 
   throw new Error(
-    'Unknown app. Expected one of: apphub, demo, maze, teapot',
+    'Unknown app. Expected one of: apphub, demo, maze, teapot, jsonview1, jsonview2',
   );
 }

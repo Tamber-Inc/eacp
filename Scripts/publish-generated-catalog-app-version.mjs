@@ -260,7 +260,7 @@ function productFromKnownCatalog(productId) {
     bundleName: product.bundleName,
     channel,
     latestVersion: version,
-    dependencies: [],
+    dependencies: product.dependencies ?? [],
     artifacts: [],
   };
 }
