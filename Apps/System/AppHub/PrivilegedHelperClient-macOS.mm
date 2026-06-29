@@ -57,7 +57,7 @@ std::string stringFromNSString(NSString* value)
 {
     if (value == nil)
         return {};
-    return std::string([value UTF8String]);
+    return {[value UTF8String]};
 }
 
 } // namespace
