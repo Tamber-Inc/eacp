@@ -8,7 +8,7 @@
 #include <string>
 
 #ifndef EACP_APPHUB_HELPER_ALLOWED_TEAM_ID
-#define EACP_APPHUB_HELPER_ALLOWED_TEAM_ID "MBHR5VAUVQ"
+#define EACP_APPHUB_HELPER_ALLOWED_TEAM_ID "MBHR5VAUVQ" // @claude this shouldn't be here.
 #endif
 
 @protocol EACPAppHubPrivilegedHelperProtocol
@@ -23,7 +23,7 @@ std::string stringFromNSString(NSString* value)
 {
     if (value == nil)
         return {};
-    return std::string([value UTF8String]);
+    return {([value UTF8String])};
 }
 
 NSString* nsString(const std::string& value)
