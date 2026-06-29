@@ -64,7 +64,6 @@ run('cmake', [
   '-DEACP_APPHUB_DISABLE_DEV_CATALOG=ON',
   `-DEACP_APPHUB_DEMO_MANIFEST_URL=${releaseBaseUrl}/manifest.json`,
   `-DEACP_APPHUB_MANIFEST_URL=${releaseBaseUrl}/hub-manifest.json`,
-  `-DEACP_APPHUB_CATALOG_URL=${releaseBaseUrl}/apphub-catalog.json`,
 ]);
 
 log('Build signed-demo targets');

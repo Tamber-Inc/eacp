@@ -82,7 +82,6 @@ run('cmake', [
   `-DCMAKE_OSX_DEPLOYMENT_TARGET=${macOSDeploymentTarget}`,
   `-DEACP_CATALOG_DEFAULT_VERSION=${version}`,
   '-DEACP_APPHUB_DISABLE_DEV_CATALOG=ON',
-  `-DEACP_APPHUB_CATALOG_URL=${releaseBaseUrl}/apphub-catalog.json`,
 ]);
 
 log(`Build ${currentProduct.name} ${version}`);
