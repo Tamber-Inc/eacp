@@ -64,6 +64,31 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  apphub-windows-install:
+    name: AppHub Windows Install-to-Root
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up MSVC environment
+        uses: egor-tensin/vs-shell@54e4148eac794e4580591c2e0b7750f14b7891fc # v2
+        with:
+          arch: x64
+
+      - name: Configure
+        run: cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Debug -DEACP_UNITY_BUILD=OFF
+
+      - name: Build privileged helper and updater tests
+        run: cmake --build build --target AppHubPrivilegedHelper UpdaterTests
+
+      - name: Privileged install unit tests
+        run: ctest --test-dir build --output-on-failure -R "Updater/privileged|Updater/protectedApplications"
+
+      - name: End-to-end install-to-root smoke test
+        shell: pwsh
+        run: ./Scripts/apphub-windows-install-smoke.ps1 -Helper build/Apps/System/AppHub/AppHubPrivilegedHelper.exe
+
   build-ios:
     name: iOS Simulator
     runs-on: macos-latest

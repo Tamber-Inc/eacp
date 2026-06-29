@@ -384,6 +384,38 @@ These helpers should eventually handle:
 - Avoid per-user Squirrel-style installs for the product apps when the goal is
   a protected per-machine install.
 
+#### Windows backend (implemented)
+
+The first Windows backend uses an **on-demand elevation broker** instead of a
+resident service, which preserves the same privileged boundary while staying
+testable without leaving system state behind:
+
+- `AppHubPrivilegedHelper.exe` is the elevated worker — the Windows analogue of
+  the macOS SMJobBless XPC daemon. It speaks the same JSON command protocol
+  (`installAppBundle`) and re-validates every request before touching the
+  protected root. Request and reply are exchanged through files so the
+  unprivileged hub can hand work across the elevation boundary.
+  (`Apps/System/AppHub/PrivilegedHelper/MainWindows.cpp`.)
+- `PrivilegedHelperClient-Windows.cpp` is the client: it locates the helper
+  (shipped next to the hub), marshals the request, and — depending on whether
+  the protected root is already writable — either runs the helper directly or
+  elevates it through the `runas` verb (UAC). It ships as `asInvoker`; the OS
+  ACLs still guard `C:\Program Files`.
+- `eacp::Updater::installAppBundleArtifact` performs the protected write on
+  Windows: SHA-256 re-verification, `tar.exe` (bsdtar) extraction, atomic swap
+  into `protectedApplicationsRoot()`, and rollback. The install root honours the
+  `EACP_APPHUB_INSTALL_ROOT` override so tests and CI exercise the real path
+  without writing to a live `Program Files`.
+- A persistent Windows Service with a named-pipe protocol remains the path for
+  silent, non-interactive updates (no UAC prompt) and is the natural next step
+  once the agent process lands; the install/validate core (`installAppBundleArtifact`)
+  is already shared and would back it unchanged.
+
+Validation: `Tests/Updater/PrivilegedInstallTests.cpp` covers install, replace +
+rollback, hash mismatch, and path rejection against a redirected root; the
+`AppHub Windows Install-to-Root` CI job builds the helper and runs
+`Scripts/apphub-windows-install-smoke.ps1` end to end.
+
 ## Example App
 
 Create:

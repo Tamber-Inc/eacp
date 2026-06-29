@@ -40,7 +40,7 @@ if (APPLE)
 elseif (WIN32)
     set(APPHUB_PLATFORM_SOURCES
         AppHubApi-Windows.cpp
-        PrivilegedHelperClient-Unsupported.cpp)
+        PrivilegedHelperClient-Windows.cpp)
 else ()
     set(APPHUB_PLATFORM_SOURCES
         AppHubApi-Windows.cpp
@@ -136,4 +136,32 @@ if (APPLE)
                 "${CMAKE_CURRENT_BINARY_DIR}/${EACP_APPHUB_HELPER_LABEL}.plist"
                 "$<TARGET_BUNDLE_DIR:AppHub>/Contents/Library/LaunchServices/${EACP_APPHUB_HELPER_LABEL}.plist"
         VERBATIM)
+endif ()
+
+if (WIN32)
+    # The Windows analogue of the macOS SMJobBless daemon: a small elevated
+    # worker that owns machine-level writes and re-validates each install
+    # request. The hub elevates it on demand (UAC) through the runas verb.
+    add_executable(AppHubPrivilegedHelper PrivilegedHelper/MainWindows.cpp)
+    target_link_libraries(AppHubPrivilegedHelper PRIVATE eacp-updater)
+    set_default_target_setting(AppHubPrivilegedHelper)
+    set_target_properties(AppHubPrivilegedHelper
+        PROPERTIES
+            OUTPUT_NAME "AppHubPrivilegedHelper"
+            RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:AppHub>")
+    target_compile_definitions(AppHubPrivilegedHelper
+        PRIVATE
+            EACP_APPHUB_HELPER_LABEL="${EACP_APPHUB_HELPER_LABEL}"
+            EACP_APPHUB_HELPER_VERSION="${EACP_APPHUB_VERSION}")
+
+    # The helper ships as asInvoker; the hub decides when elevation is needed
+    # and launches it through the runas verb (UAC) for protected writes. This
+    # keeps it launchable directly into a writable dev/test root (and on the
+    # already-elevated CI runner) while the OS ACLs still guard Program Files.
+    if (MSVC)
+        target_link_options(AppHubPrivilegedHelper PRIVATE
+            "/MANIFESTUAC:level='asInvoker' uiAccess='false'")
+    endif ()
+
+    add_dependencies(AppHub AppHubPrivilegedHelper)
 endif ()

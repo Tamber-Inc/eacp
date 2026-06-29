@@ -1,5 +1,7 @@
 #include "AppHubPlatform.h"
 
+#include <eacp/Core/Process/Process.h>
+
 #if defined(_WIN32)
 #include <windows.h>
 
@@ -10,6 +12,7 @@
 namespace AppHub
 {
 namespace fs = std::filesystem;
+namespace Processes = eacp::Processes;
 
 fs::path defaultStateRoot()
 {
@@ -26,17 +29,19 @@ eacp::Updater::Target currentTarget()
 {
     auto target = eacp::Updater::Target();
     target.platform = eacp::Updater::Platform::Windows;
+#if defined(_M_ARM64) || defined(__aarch64__)
+    target.architecture = eacp::Updater::Architecture::Arm64;
+#else
     target.architecture = eacp::Updater::Architecture::X64;
+#endif
     return target;
 }
 
 fs::path installedApplicationsRoot()
 {
-#if defined(_WIN32)
-    if (auto* programFiles = std::getenv("ProgramFiles"))
-        return fs::path(programFiles);
-#endif
-    return fs::temp_directory_path() / "Applications";
+    // Share the helper's protected root so the hub reads installs back from the
+    // same machine-level location the helper writes to.
+    return eacp::Updater::protectedApplicationsRoot();
 }
 
 fs::path installedAppBundlePath(std::string_view bundleName)
@@ -80,9 +85,24 @@ std::optional<fs::path> currentExecutablePath()
 #endif
 }
 
-bool createAppBundleZip(const fs::path&, const fs::path&)
+bool createAppBundleZip(const fs::path& bundle, const fs::path& output)
 {
-    return false;
+    std::error_code ec;
+    fs::create_directories(output.parent_path(), ec);
+    fs::remove(output, ec);
+
+    // bsdtar ships as tar.exe on Windows 10+; -a selects the zip format from the
+    // output extension and --keepParent semantics come from archiving the bundle
+    // directory by name relative to its parent.
+    auto result = Processes::run("tar",
+                                 {"-a",
+                                  "-c",
+                                  "-f",
+                                  output.string(),
+                                  "-C",
+                                  bundle.parent_path().string(),
+                                  bundle.filename().string()});
+    return result.exited && result.exitCode == 0 && fs::exists(output, ec);
 }
 
 LaunchResult openAppBundle(std::string_view appPath)
@@ -108,12 +128,59 @@ LaunchResult openNewAppBundleInstance(std::string_view appPath)
     return openAppBundle(appPath);
 }
 
-PlatformResult directInstallAppBundle(const fs::path&,
-                                      const eacp::Updater::RemoteAppManifest&,
-                                      const fs::path&)
+PlatformResult directInstallAppBundle(const fs::path& root,
+                                      const eacp::Updater::RemoteAppManifest& manifest,
+                                      const fs::path& artifactPath)
 {
-    return {.ok = false,
-            .error = "direct install fallback is not implemented on Windows"};
+    auto unpack = root / "remote-unpack";
+
+    std::error_code ec;
+    fs::remove_all(unpack, ec);
+    fs::create_directories(unpack, ec);
+    if (ec)
+        return {.ok = false, .error = "failed to create unpack directory"};
+
+    auto extracted = Processes::run(
+        "tar",
+        {"-x", "-f", artifactPath.string(), "-C", unpack.string()});
+    if (!extracted.exited || extracted.exitCode != 0)
+        return {.ok = false, .error = "failed to unpack artifact"};
+
+    auto unpackedApp = unpack / manifest.bundleName;
+    if (!fs::is_directory(unpackedApp, ec))
+        return {.ok = false,
+                .error = "artifact did not contain " + manifest.bundleName};
+
+    auto installPath = installedAppBundlePath(manifest.bundleName);
+    auto rollbackPath =
+        installedApplicationsRoot() / (manifest.bundleName + ".rollback");
+
+    fs::create_directories(installedApplicationsRoot(), ec);
+    fs::remove_all(rollbackPath, ec);
+    if (ec)
+        return {.ok = false, .error = "failed to remove old rollback"};
+
+    if (fs::exists(installPath, ec))
+    {
+        fs::rename(installPath, rollbackPath, ec);
+        if (ec)
+            return {.ok = false, .error = "failed to create rollback"};
+    }
+
+    fs::rename(unpackedApp, installPath, ec);
+    if (ec)
+    {
+        auto copyEc = std::error_code();
+        fs::copy(unpackedApp,
+                 installPath,
+                 fs::copy_options::recursive
+                     | fs::copy_options::overwrite_existing,
+                 copyEc);
+        if (copyEc)
+            return {.ok = false, .error = "failed to install app"};
+    }
+
+    return {.ok = true};
 }
 
 } // namespace AppHub

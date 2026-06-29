@@ -4,6 +4,7 @@
 
 #include <Miro/Miro.h>
 
+#include <filesystem>
 #include <string>
 
 namespace eacp::Updater
@@ -348,6 +349,11 @@ InstallPlan planUpdateAll(const ProductCatalog& catalog,
 InstallPlan planRemove(const std::string& productId);
 
 bool pathIsUnder(const std::string& path, const std::string& root);
+
+// The machine-level directory that the privileged helper installs app bundles
+// into. Honours the EACP_APPHUB_INSTALL_ROOT override so tests and CI can
+// exercise the install path without writing to a real protected location.
+std::filesystem::path protectedApplicationsRoot();
 
 InstallResult installAppBundleArtifact(
     const PrivilegedAppBundleInstallRequest& request);
