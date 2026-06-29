@@ -139,19 +139,36 @@ jobs:
           test "$installed_version" = "$VERSION"
           echo "Installed remote signed Demo App ${installed_version} from ${manifest_url}"
 
-          "${smoke_root}/AppHub.app/Contents/MacOS/AppHub" \
-            --root "${smoke_root}/hub-state" \
-            catalog-install com.eacp.maze
-          test -d /Applications/Maze.app
-          codesign --verify --strict --verbose=2 /Applications/Maze.app
+          catalog_json="${smoke_root}/apphub-catalog.json"
+          curl --fail --location --silent --show-error \
+            "${RELEASE_BASE_URL}/apphub-catalog.json" \
+            --output "$catalog_json"
+
+          product_count="$(node -e "const c=require(process.argv[1]); console.log(c.products.length)" "$catalog_json")"
+          test "$product_count" -gt 0
 
           "${smoke_root}/AppHub.app/Contents/MacOS/AppHub" \
             --root "${smoke_root}/hub-state" \
-            catalog-install com.eacp.teapot
-          test -d /Applications/Teapot.app
-          codesign --verify --strict --verbose=2 /Applications/Teapot.app
+            list | tee "${smoke_root}/catalog-list.txt"
 
-          echo "Installed remote signed Maze and Teapot from ${RELEASE_BASE_URL}/apphub-catalog.json"
+          node -e "const c=require(process.argv[1]); for (const p of c.products) console.log([p.id,p.bundleName].join('\t'))" "$catalog_json" \
+            | while IFS=$'\t' read -r product_id bundle_name; do
+                test -n "$product_id"
+                test -n "$bundle_name"
+                grep -F "$product_id" "${smoke_root}/catalog-list.txt"
+                "${smoke_root}/AppHub.app/Contents/MacOS/AppHub" \
+                  --root "${smoke_root}/hub-state" \
+                  catalog-install "$product_id"
+                test -d "/Applications/${bundle_name}"
+                codesign --verify --strict --verbose=2 "/Applications/${bundle_name}"
+              done
+
+          "${smoke_root}/AppHub.app/Contents/MacOS/AppHub" \
+            --root "${smoke_root}/hub-state" \
+            update | tee "${smoke_root}/catalog-update.txt"
+          grep -F "no updates available" "${smoke_root}/catalog-update.txt"
+
+          echo "Installed ${product_count} remote signed catalog apps from ${RELEASE_BASE_URL}/apphub-catalog.json"
 
       - name: Smoke install AppHub from published internet artifacts
         if: inputs.publish_hub_update == 'true'

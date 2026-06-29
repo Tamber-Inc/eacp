@@ -2,6 +2,7 @@
 
 #include <NanoTest/NanoTest.h>
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -60,6 +61,11 @@ void writeCatalog(const fs::path& root)
     catalog.signature = "test";
     catalog.products.add(makeAppProduct());
     writeFile(root / "catalog.json", Updater::catalogToJson(catalog));
+}
+
+void writeCatalogAt(const fs::path& path, const Updater::ProductCatalog& catalog)
+{
+    writeFile(path, Updater::catalogToJson(catalog));
 }
 
 void writeReceipt(const fs::path& root, const std::string& installPath)
@@ -218,4 +224,45 @@ auto tOpenProductFallsBackToCatalogBundleWhenReceiptIsMissing =
     check(launchProbe().launchedPath
           == AppHub::installedAppBundlePath("Maze.app").string());
     check(fs::exists(root / "running" / "com.eacp.maze.running"));
+};
+
+auto tLoadsConfiguredDevCatalog =
+    test("AppHub/loadsConfiguredDevCatalog") = []
+{
+    auto root = testRoot("configured-dev-catalog");
+    auto catalogPath = root / "generated" / "apphub-catalog.json";
+
+    auto product = Updater::Product();
+    product.id = "com.eacp.webviewtodo";
+    product.name = "WebView Todo";
+    product.kind = Updater::PackageKind::App;
+    product.bundleName = "WebView Todo.app";
+    product.channel = "stable";
+    product.latestVersion = "1.0.0";
+
+    auto artifact = Updater::ProductArtifact();
+    artifact.platform = Updater::Platform::MacOS;
+    artifact.architecture = Updater::Architecture::Universal;
+    artifact.url = "file:///tmp/webviewtodo.zip";
+    artifact.sha256 = "test";
+    product.artifacts.add(artifact);
+
+    auto catalog = Updater::ProductCatalog();
+    catalog.catalogVersion = 42;
+    catalog.signature = "test";
+    catalog.products.add(product);
+    writeCatalogAt(catalogPath, catalog);
+
+    ::setenv("EACP_APPHUB_DEV_CATALOG_PATH", catalogPath.c_str(), 1);
+    auto api = Api::AppHubApi(root);
+    auto state = api.getHubState();
+    ::unsetenv("EACP_APPHUB_DEV_CATALOG_PATH");
+
+    check(state.catalogVersion == 42);
+    check(state.products.size() == 1);
+    if (state.products.size() == 1)
+    {
+        check(state.products[0].id == "com.eacp.webviewtodo");
+        check(state.products[0].name == "WebView Todo");
+    }
 };

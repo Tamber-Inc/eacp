@@ -5,6 +5,7 @@ set(BUNDLE_ID "com.eacp.consoleapp")
 
 if (APPLE)
     set_target_properties(Console PROPERTIES
+            EACP_CATALOG_EXCLUDE TRUE
             MACOSX_BUNDLE TRUE
             MACOSX_BUNDLE_BUNDLE_NAME "Console App"
             MACOSX_BUNDLE_GUI_IDENTIFIER ${BUNDLE_ID}
