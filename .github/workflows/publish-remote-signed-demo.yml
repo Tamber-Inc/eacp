@@ -251,7 +251,7 @@ jobs:
           "${smoke_root}/AppHub.app/Contents/MacOS/AppHub" \
             --root "${smoke_root}/hub-state" \
             catalog-update "$APPHUB_CATALOG_PRODUCT_ID" | tee "${smoke_root}/catalog-update.txt"
-          grep -F "no updates available" "${smoke_root}/catalog-update.txt"
+          grep -E -i "no update(s)? available" "${smoke_root}/catalog-update.txt"
 
           echo "Installed ${APPHUB_CATALOG_PRODUCT_ID} ${VERSION} from ${RELEASE_BASE_URL}/apphub-catalog.json"
 
