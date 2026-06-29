@@ -1,16 +1,48 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { createReadStream, mkdirSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  createReadStream,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 
+// When packaging a plain build directory (non-macOS), keep the runtime payload
+// but drop the build-system droppings so the bundle is just the app.
+function isBuildArtifact(path) {
+  const name = basename(path);
+  if (name === 'CMakeFiles') return true;
+  return /\.(pdb|ilk|obj|exp|cmake|dd)$/i.test(name);
+}
+
+// The catalog the hub consumes locally must advertise an artifact for the
+// platform it is generated on, so the build host's target is the default.
+function hostTarget() {
+  if (process.platform === 'darwin') {
+    return { platform: 'MacOS', architecture: 'Universal' };
+  }
+  const architecture = process.arch === 'arm64' ? 'Arm64' : 'X64';
+  if (process.platform === 'win32') {
+    return { platform: 'Windows', architecture };
+  }
+  return { platform: 'Linux', architecture };
+}
+
 function parseArgs(argv) {
+  const host = hostTarget();
   const args = {
     products: [],
     catalogVersion: '1',
     channel: 'stable',
     urlBase: '',
+    platform: host.platform,
+    architecture: host.architecture,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -30,6 +62,12 @@ function parseArgs(argv) {
       i += 1;
     } else if (arg === '--url-base') {
       args.urlBase = value.replace(/\/+$/, '');
+      i += 1;
+    } else if (arg === '--platform') {
+      args.platform = value;
+      i += 1;
+    } else if (arg === '--arch') {
+      args.architecture = value;
       i += 1;
     } else if (arg === '--product') {
       args.products.push(parseProduct(value));
@@ -73,7 +111,28 @@ function run(command, args) {
 function zipBundle(product, artifactDir) {
   const zipName = `${product.id}-${product.version}.app.zip`;
   const zipPath = join(artifactDir, zipName);
-  run('ditto', ['-c', '-k', '--keepParent', product.bundleDir, zipPath]);
+
+  if (process.platform === 'darwin') {
+    // ditto --keepParent makes the .app the top-level entry of the zip.
+    run('ditto', ['-c', '-k', '--keepParent', product.bundleDir, zipPath]);
+    return { zipName, zipPath };
+  }
+
+  // Elsewhere the built app is a plain directory whose name differs from the
+  // catalog bundle name, so stage it under the bundle name first, then archive
+  // with bsdtar (tar.exe on Windows) so the zip's top entry matches what the
+  // privileged helper expects to unpack.
+  const staging = mkdtempSync(join(tmpdir(), 'eacp-bundle-'));
+  try {
+    const staged = join(staging, product.bundleName);
+    cpSync(product.bundleDir, staged, {
+      recursive: true,
+      filter: (source) => !isBuildArtifact(source),
+    });
+    run('tar', ['-a', '-c', '-f', zipPath, '-C', staging, product.bundleName]);
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
   return { zipName, zipPath };
 }
 
@@ -98,14 +157,14 @@ for (const product of args.products) {
     id: product.id,
     name: product.name,
     kind: product.kind,
-    bundleName: basename(product.bundleDir),
+    bundleName: product.bundleName,
     channel: args.channel,
     latestVersion: product.version,
     dependencies: product.dependencies,
     artifacts: [
       {
-        platform: 'MacOS',
-        architecture: 'Universal',
+        platform: args.platform,
+        architecture: args.architecture,
         url: args.urlBase ? `${args.urlBase}/${zipName}` : `file://${zipPath}`,
         sha256: await sha256(zipPath),
         signature: 'dev-signature-placeholder',

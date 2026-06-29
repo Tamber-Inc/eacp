@@ -197,9 +197,19 @@ function(eacp_generate_apphub_catalog)
         endif ()
         list(JOIN DEPS "," DEPS_CSV)
         list(APPEND INCLUDED_CATALOG_TARGETS "${CATALOG_TARGET}")
+
+        # $<TARGET_BUNDLE_DIR> only resolves for real macOS .app bundles; on
+        # other platforms the app is a plain executable, so package the
+        # directory that holds it.
+        if (APPLE)
+            set(BUNDLE_DIR_EXPR "$<TARGET_BUNDLE_DIR:${CATALOG_TARGET}>")
+        else ()
+            set(BUNDLE_DIR_EXPR "$<TARGET_FILE_DIR:${CATALOG_TARGET}>")
+        endif ()
+
         list(APPEND PRODUCT_ARGS
                 --product
-                "${CATALOG_TARGET}|${PRODUCT_ID}|${DISPLAY_NAME}|${BUNDLE_NAME}|${PRODUCT_VERSION}|${KIND}|${DEPS_CSV}|$<TARGET_BUNDLE_DIR:${CATALOG_TARGET}>")
+                "${CATALOG_TARGET}|${PRODUCT_ID}|${DISPLAY_NAME}|${BUNDLE_NAME}|${PRODUCT_VERSION}|${KIND}|${DEPS_CSV}|${BUNDLE_DIR_EXPR}")
     endforeach ()
 
     if (NOT INCLUDED_CATALOG_TARGETS)

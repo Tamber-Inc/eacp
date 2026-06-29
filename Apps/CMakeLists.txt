@@ -16,7 +16,7 @@ if ((APPLE OR WIN32) AND EACP_BUILD_GRAPHICS)
     endif ()
 endif ()
 
-if (APPLE AND NOT IOS)
+if ((APPLE OR WIN32) AND NOT IOS)
     eacp_generate_apphub_catalog(
             TARGET eacp-apphub-local-catalog
             OUTPUT "${CMAKE_BINARY_DIR}/Apps/System/AppHub/generated-catalog/apphub-catalog.json"
