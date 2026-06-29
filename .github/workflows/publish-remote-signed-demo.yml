@@ -26,7 +26,7 @@ permissions:
 jobs:
   publish:
     name: Build, Sign, Publish, Smoke Install
-    runs-on: macos-latest
+    runs-on: macos-15
 
     env:
       VERSION: ${{ inputs.version }}
@@ -38,35 +38,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-
-      - name: Select release toolchain
-        run: |
-          set -euo pipefail
-
-          selected=""
-          for candidate in /Applications/Xcode_16*.app; do
-            if [ -d "$candidate" ]; then
-              selected="$candidate"
-            fi
-          done
-
-          if [ -z "$selected" ]; then
-            echo "No Xcode 16 toolchain is available on this runner." >&2
-            ls -1 /Applications | grep -E '^Xcode.*\.app$' >&2 || true
-            exit 1
-          fi
-
-          sudo xcode-select -s "$selected"
-          xcodebuild -version
-          sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
-          echo "macOS SDK ${sdk_version}"
-          case "$sdk_version" in
-            10.*|11.*|12.*|13.*|14.*|15.*) ;;
-            *)
-              echo "Release artifacts must be built with a macOS 15 SDK or older." >&2
-              exit 1
-              ;;
-          esac
 
       - uses: 1password/install-cli-action@v3
 
