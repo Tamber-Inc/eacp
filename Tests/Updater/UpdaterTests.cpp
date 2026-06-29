@@ -13,6 +13,54 @@
 using namespace nano;
 namespace fs = std::filesystem;
 namespace Updater = eacp::Updater;
+using Platform = Updater::Platform;
+using Architecture = Updater::Architecture;
+
+enum class TestPlatform
+{
+    Any,
+    Workstation,
+    Cluster
+};
+
+enum class TestArchitecture
+{
+    Any,
+    X64,
+    NeuralEngine,
+    Universal
+};
+
+namespace eacp::Updater
+{
+template <>
+struct PlatformTraits<TestPlatform>
+{
+    static int specificity(TestPlatform artifact, TestPlatform target)
+    {
+        if (artifact == TestPlatform::Any)
+            return 0;
+        if (target == TestPlatform::Any)
+            return 0;
+        return artifact == target ? 2 : -1;
+    }
+};
+
+template <>
+struct ArchitectureTraits<TestArchitecture>
+{
+    static int specificity(TestArchitecture artifact, TestArchitecture target)
+    {
+        if (artifact == TestArchitecture::Any)
+            return 0;
+        if (artifact == TestArchitecture::Universal)
+            return 1;
+        if (target == TestArchitecture::Any)
+            return 0;
+        return artifact == target ? 2 : -1;
+    }
+};
+} // namespace eacp::Updater
 
 namespace
 {
@@ -32,32 +80,111 @@ void writeFile(const fs::path& path, const std::string& text)
     out << text;
 }
 
+Updater::ProductCatalog makeEmptyCatalog(int version = 1)
+{
+    auto catalog = Updater::ProductCatalog();
+    catalog.catalogVersion = version;
+    catalog.signature = "dev-signature";
+    return catalog;
+}
+
+Updater::Product makeProduct(const std::string& id,
+                             const std::string& name,
+                             Updater::PackageKind kind,
+                             const std::string& version)
+{
+    auto product = Updater::Product();
+    product.id = id;
+    product.name = name;
+    product.kind = kind;
+    product.channel = "stable";
+    product.latestVersion = version;
+    return product;
+}
+
+Updater::ProductArtifact makeArtifact(Platform platform,
+                                      Architecture architecture,
+                                      const std::string& url,
+                                      const std::string& sha256)
+{
+    auto artifact = Updater::ProductArtifact();
+    artifact.platform = platform;
+    artifact.architecture = architecture;
+    artifact.url = url;
+    artifact.sha256 = sha256;
+    artifact.signature = "dev-artifact";
+    return artifact;
+}
+
+Updater::Target makeTarget(Platform platform, Architecture architecture)
+{
+    auto target = Updater::Target();
+    target.platform = platform;
+    target.architecture = architecture;
+    return target;
+}
+
+Updater::ProductReceipt makeReceipt(const std::string& productId,
+                                    const std::string& version)
+{
+    auto receipt = Updater::ProductReceipt();
+    receipt.productId = productId;
+    receipt.version = version;
+    return receipt;
+}
+
+Updater::PlanOperation makeOperation(Updater::PlanAction action,
+                                     const std::string& productId,
+                                     const std::string& name = {},
+                                     const std::string& version = {},
+                                     const std::string& artifactPath = {},
+                                     const std::string& artifactSha256 = {})
+{
+    auto operation = Updater::PlanOperation();
+    operation.action = action;
+    operation.productId = productId;
+    operation.name = name;
+    operation.channel = "stable";
+    operation.version = version;
+    operation.artifactPath = artifactPath;
+    operation.artifactSha256 = artifactSha256;
+    return operation;
+}
+
+Updater::MockHelperOptions makeHelperOptions(const fs::path& root,
+                                             const fs::path& staging)
+{
+    auto options = Updater::MockHelperOptions();
+    options.root = root.string();
+    options.stagingRoot = staging.string();
+    return options;
+}
+
 Updater::ProductCatalog makeCatalog(const std::string& editorHash,
                                     const std::string& captureHash = {})
 {
-    auto catalog = Updater::ProductCatalog {.catalogVersion = 1,
-                                            .signature = "dev-signature"};
+    auto catalog = makeEmptyCatalog();
 
-    auto editor = Updater::Product {.id = "tamber.editor",
-                                    .name = "Example Editor",
-                                    .channel = "stable",
-                                    .latestVersion = "1.0.0"};
-    editor.artifacts.add({.platform = "test-platform",
-                          .url = "file://editor",
-                          .sha256 = editorHash,
-                          .signature = "dev-artifact"});
+    auto editor = makeProduct("tamber.editor",
+                              "Example Editor",
+                              Updater::PackageKind::App,
+                              "1.0.0");
+    editor.artifacts.add(makeArtifact(Platform::MacOS,
+                                      Architecture::Any,
+                                      "file://editor",
+                                      editorHash));
     catalog.products.add(editor);
 
     if (!captureHash.empty())
     {
-        auto capture = Updater::Product {.id = "tamber.capture",
-                                         .name = "Example Capture",
-                                         .channel = "stable",
-                                         .latestVersion = "1.0.0"};
-        capture.artifacts.add({.platform = "test-platform",
-                               .url = "file://capture",
-                               .sha256 = captureHash,
-                               .signature = "dev-artifact"});
+        auto capture = makeProduct("tamber.capture",
+                                   "Example Capture",
+                                   Updater::PackageKind::App,
+                                   "1.0.0");
+        capture.artifacts.add(makeArtifact(Platform::MacOS,
+                                           Architecture::Any,
+                                           "file://capture",
+                                           captureHash));
         catalog.products.add(capture);
     }
 
@@ -76,16 +203,198 @@ auto tCatalogUsesMiroJson = test("Updater/catalogRoundTripsThroughMiroJson") = [
     check(parsed.catalogVersion == 1);
     check(parsed.products.size() == 1);
     check(parsed.products[0].id == "tamber.editor");
+    check(parsed.products[0].kind == Updater::PackageKind::App);
     check(parsed.products[0].artifacts[0].sha256 == "hash");
+};
+
+auto tArtifactForTargetPrefersExactVariant =
+    test("Updater/artifactForTargetPrefersExactVariant") = []
+{
+    auto product = makeProduct("shared.onnxruntime",
+                               "ONNX Runtime",
+                               Updater::PackageKind::Runtime,
+                               "1.0.0");
+    product.artifacts.add(
+        makeArtifact(Platform::MacOS,
+                     Architecture::Universal,
+                     "universal",
+                     "universal-hash"));
+    product.artifacts.add(makeArtifact(Platform::MacOS,
+                                       Architecture::Arm64,
+                                       "arm64",
+                                       "arm64-hash"));
+    product.artifacts.add(
+        makeArtifact(Platform::Any, Architecture::Any, "any", "any-hash"));
+
+    auto exact =
+        Updater::artifactForTarget(product,
+                                   makeTarget(Platform::MacOS,
+                                              Architecture::Arm64));
+    auto universal =
+        Updater::artifactForTarget(product,
+                                   makeTarget(Platform::MacOS,
+                                              Architecture::X64));
+    auto fallback =
+        Updater::artifactForTarget(product,
+                                   makeTarget(Platform::Linux,
+                                              Architecture::X64));
+
+    check(exact.url == "arm64");
+    check(universal.url == "universal");
+    check(fallback.url == "any");
+};
+
+auto tTemplatedTargetDomainSupportsHubEnums =
+    test("Updater/templatedTargetDomainSupportsHubEnums") = []
+{
+    using HubCatalog =
+        Updater::ProductCatalogT<TestPlatform, TestArchitecture>;
+    using HubProduct = Updater::ProductT<TestPlatform, TestArchitecture>;
+    using HubArtifact =
+        Updater::ProductArtifactT<TestPlatform, TestArchitecture>;
+    using HubTarget = Updater::TargetT<TestPlatform, TestArchitecture>;
+
+    auto product = HubProduct();
+    product.id = "tamber.neural-editor";
+    product.name = "Neural Editor";
+    product.kind = Updater::PackageKind::App;
+    product.channel = "stable";
+    product.latestVersion = "1.0.0";
+
+    auto fallback = HubArtifact();
+    fallback.platform = TestPlatform::Any;
+    fallback.architecture = TestArchitecture::Any;
+    fallback.url = "fallback";
+    fallback.sha256 = "fallback-hash";
+    fallback.signature = "test";
+    product.artifacts.add(fallback);
+
+    auto universal = HubArtifact();
+    universal.platform = TestPlatform::Workstation;
+    universal.architecture = TestArchitecture::Universal;
+    universal.url = "universal";
+    universal.sha256 = "universal-hash";
+    universal.signature = "test";
+    product.artifacts.add(universal);
+
+    auto exact = HubArtifact();
+    exact.platform = TestPlatform::Workstation;
+    exact.architecture = TestArchitecture::NeuralEngine;
+    exact.url = "neural-engine";
+    exact.sha256 = "neural-hash";
+    exact.signature = "test";
+    product.artifacts.add(exact);
+
+    auto catalog = HubCatalog();
+    catalog.catalogVersion = 1;
+    catalog.signature = "hub-signature";
+    catalog.products.add(product);
+
+    auto json = Miro::toJSONString(catalog);
+    auto parsed = HubCatalog();
+    Miro::fromJSONString(parsed, json);
+
+    auto target = HubTarget();
+    target.platform = TestPlatform::Workstation;
+    target.architecture = TestArchitecture::NeuralEngine;
+
+    auto selected = Updater::artifactForTargetT(parsed.products[0], target);
+    check(selected.url == "neural-engine");
+};
+
+auto tPlanInstallWithDependenciesInstallsSharedPackagesFirst =
+    test("Updater/planInstallWithDependenciesInstallsSharedPackagesFirst") = []
+{
+    auto root = testRoot("dependency-plan");
+    auto staging = root / "staging";
+    writeFile(staging / "shared.clap.artifact", "clap");
+    writeFile(staging / "tamber.editor.artifact", "editor");
+
+    auto catalog = makeEmptyCatalog();
+
+    auto shared = makeProduct("shared.clap",
+                              "CLAP Model",
+                              Updater::PackageKind::Model,
+                              "1.0.0");
+    shared.artifacts.add(makeArtifact(Platform::Any,
+                                      Architecture::Any,
+                                      "file://shared.clap",
+                                      eacp::Crypto::sha256File(
+                                          (staging / "shared.clap.artifact")
+                                              .string())));
+
+    auto app = makeProduct("tamber.editor",
+                           "Example Editor",
+                           Updater::PackageKind::App,
+                           "1.0.0");
+    app.dependencies.add("shared.clap");
+    app.artifacts.add(makeArtifact(Platform::MacOS,
+                                   Architecture::Arm64,
+                                   "file://tamber.editor",
+                                   eacp::Crypto::sha256File(
+                                       (staging / "tamber.editor.artifact")
+                                           .string())));
+
+    catalog.products.add(shared);
+    catalog.products.add(app);
+
+    auto plan = Updater::planInstallWithDependencies(catalog,
+                                                     {},
+                                                     "tamber.editor",
+                                                     makeTarget(
+                                                         Platform::MacOS,
+                                                         Architecture::Arm64),
+                                                     staging.string());
+
+    check(plan.operations.size() == 2);
+    check(plan.operations[0].productId == "shared.clap");
+    check(plan.operations[0].action == Updater::PlanAction::Install);
+    check(plan.operations[1].productId == "tamber.editor");
+    check(plan.operations[1].action == Updater::PlanAction::Install);
+};
+
+auto tPlanUpdateAllUpdatesSharedPackageIndependently =
+    test("Updater/planUpdateAllUpdatesSharedPackageIndependently") = []
+{
+    auto root = testRoot("shared-update");
+    auto staging = root / "staging";
+    writeFile(staging / "shared.clap.artifact", "clap-v2");
+
+    auto catalog = makeEmptyCatalog(2);
+    auto shared = makeProduct("shared.clap",
+                              "CLAP Model",
+                              Updater::PackageKind::Model,
+                              "2.0.0");
+    shared.artifacts.add(makeArtifact(Platform::Any,
+                                      Architecture::Any,
+                                      "file://shared.clap",
+                                      eacp::Crypto::sha256File(
+                                          (staging / "shared.clap.artifact")
+                                              .string())));
+    catalog.products.add(shared);
+
+    auto receipts = eacp::Vector<Updater::ProductReceipt>();
+    receipts.add(makeReceipt("shared.clap", "1.0.0"));
+
+    auto plan = Updater::planUpdateAll(catalog,
+                                       receipts,
+                                       makeTarget(Platform::MacOS,
+                                                  Architecture::Arm64),
+                                       staging.string());
+
+    check(plan.operations.size() == 1);
+    check(plan.operations[0].productId == "shared.clap");
+    check(plan.operations[0].action == Updater::PlanAction::Update);
 };
 
 auto tInstallPlanUsesEnumClassWithMiroJson =
     test("Updater/installPlanRoundTripsEnumClassThroughMiroJson") = []
 {
     auto plan = Updater::InstallPlan();
-    plan.operations.add({.action = Updater::PlanAction::Update,
-                         .productId = "tamber.editor",
-                         .version = "2.0.0"});
+    plan.operations.add(makeOperation(Updater::PlanAction::Update,
+                                      "tamber.editor",
+                                      {},
+                                      "2.0.0"));
 
     auto json = Updater::installPlanToJson(plan);
     check(json.find("\"Update\"") != std::string::npos);
@@ -124,11 +433,10 @@ auto tMockHelperInstallsAndWritesReceipt =
 
     auto hash = eacp::Crypto::sha256File(artifact.string());
     auto catalog = makeCatalog(hash);
-    auto helper = Updater::MockPrivilegedHelper(
-        {.root = root.string(), .stagingRoot = staging.string()});
+    auto helper = Updater::MockPrivilegedHelper(makeHelperOptions(root, staging));
 
     auto plan = Updater::planInstall(
-        catalog, {}, "tamber.editor", "test-platform", artifact.string());
+        catalog, {}, "tamber.editor", Platform::MacOS, artifact.string());
 
     auto result = helper.submit(plan);
     check(result.ok);
@@ -149,17 +457,15 @@ auto tMockHelperRejectsForgedUnsafeProductId =
     writeFile(artifact, "evil");
 
     auto plan = Updater::InstallPlan();
-    plan.operations.add({.action = Updater::PlanAction::Install,
-                         .productId = "../evil",
-                         .name = "Evil",
-                         .channel = "stable",
-                         .version = "1.0.0",
-                         .artifactPath = artifact.string(),
-                         .artifactSha256 =
-                             eacp::Crypto::sha256File(artifact.string())});
+    plan.operations.add(makeOperation(Updater::PlanAction::Install,
+                                      "../evil",
+                                      "Evil",
+                                      "1.0.0",
+                                      artifact.string(),
+                                      eacp::Crypto::sha256File(
+                                          artifact.string())));
 
-    auto helper = Updater::MockPrivilegedHelper(
-        {.root = root.string(), .stagingRoot = staging.string()});
+    auto helper = Updater::MockPrivilegedHelper(makeHelperOptions(root, staging));
     auto result = helper.submit(plan);
 
     check(!result.ok);
@@ -178,18 +484,16 @@ auto tMockHelperRejectsDuplicateOperationsBeforeMutation =
 
     auto hash = eacp::Crypto::sha256File(artifact.string());
     auto plan = Updater::InstallPlan();
-    plan.operations.add({.action = Updater::PlanAction::Install,
-                         .productId = "tamber.editor",
-                         .name = "Example Editor",
-                         .channel = "stable",
-                         .version = "1.0.0",
-                         .artifactPath = artifact.string(),
-                         .artifactSha256 = hash});
-    plan.operations.add({.action = Updater::PlanAction::Remove,
-                         .productId = "tamber.editor"});
+    plan.operations.add(makeOperation(Updater::PlanAction::Install,
+                                      "tamber.editor",
+                                      "Example Editor",
+                                      "1.0.0",
+                                      artifact.string(),
+                                      hash));
+    plan.operations.add(
+        makeOperation(Updater::PlanAction::Remove, "tamber.editor"));
 
-    auto helper = Updater::MockPrivilegedHelper(
-        {.root = root.string(), .stagingRoot = staging.string()});
+    auto helper = Updater::MockPrivilegedHelper(makeHelperOptions(root, staging));
     auto result = helper.submit(plan);
 
     check(!result.ok);
@@ -207,11 +511,10 @@ auto tMockHelperRejectsHashMismatch =
     writeFile(artifact, "editor-v1");
 
     auto catalog = makeCatalog("not-the-real-hash");
-    auto helper = Updater::MockPrivilegedHelper(
-        {.root = root.string(), .stagingRoot = staging.string()});
+    auto helper = Updater::MockPrivilegedHelper(makeHelperOptions(root, staging));
 
     auto plan = Updater::planInstall(
-        catalog, {}, "tamber.editor", "test-platform", artifact.string());
+        catalog, {}, "tamber.editor", Platform::MacOS, artifact.string());
 
     auto result = helper.submit(plan);
     check(!result.ok);
@@ -229,24 +532,21 @@ auto tMockHelperValidatesWholePlanBeforeMutation =
     writeFile(captureArtifact, "capture-v1");
 
     auto plan = Updater::InstallPlan();
-    plan.operations.add({.action = Updater::PlanAction::Install,
-                         .productId = "tamber.editor",
-                         .name = "Example Editor",
-                         .channel = "stable",
-                         .version = "1.0.0",
-                         .artifactPath = editorArtifact.string(),
-                         .artifactSha256 =
-                             eacp::Crypto::sha256File(editorArtifact.string())});
-    plan.operations.add({.action = Updater::PlanAction::Install,
-                         .productId = "tamber.capture",
-                         .name = "Example Capture",
-                         .channel = "stable",
-                         .version = "1.0.0",
-                         .artifactPath = captureArtifact.string(),
-                         .artifactSha256 = "bad-hash"});
+    plan.operations.add(makeOperation(Updater::PlanAction::Install,
+                                      "tamber.editor",
+                                      "Example Editor",
+                                      "1.0.0",
+                                      editorArtifact.string(),
+                                      eacp::Crypto::sha256File(
+                                          editorArtifact.string())));
+    plan.operations.add(makeOperation(Updater::PlanAction::Install,
+                                      "tamber.capture",
+                                      "Example Capture",
+                                      "1.0.0",
+                                      captureArtifact.string(),
+                                      "bad-hash"));
 
-    auto helper = Updater::MockPrivilegedHelper(
-        {.root = root.string(), .stagingRoot = staging.string()});
+    auto helper = Updater::MockPrivilegedHelper(makeHelperOptions(root, staging));
     auto result = helper.submit(plan);
 
     check(!result.ok);
@@ -266,11 +566,10 @@ auto tMockHelperRejectsStagingEscape =
 
     auto hash = eacp::Crypto::sha256File(outside.string());
     auto catalog = makeCatalog(hash);
-    auto helper = Updater::MockPrivilegedHelper(
-        {.root = root.string(), .stagingRoot = staging.string()});
+    auto helper = Updater::MockPrivilegedHelper(makeHelperOptions(root, staging));
 
     auto plan = Updater::planInstall(
-        catalog, {}, "tamber.editor", "test-platform", outside.string());
+        catalog, {}, "tamber.editor", Platform::MacOS, outside.string());
 
     auto result = helper.submit(plan);
     check(!result.ok);
@@ -288,11 +587,10 @@ auto tMockHelperRejectsDowngrade = test("Updater/mockHelperRejectsDowngrade") = 
     auto catalog = makeCatalog(hash);
     catalog.products[0].latestVersion = "2.0.0";
 
-    auto helper = Updater::MockPrivilegedHelper(
-        {.root = root.string(), .stagingRoot = staging.string()});
+    auto helper = Updater::MockPrivilegedHelper(makeHelperOptions(root, staging));
 
     auto installPlan = Updater::planInstall(
-        catalog, {}, "tamber.editor", "test-platform", artifact.string());
+        catalog, {}, "tamber.editor", Platform::MacOS, artifact.string());
     check(helper.submit(installPlan).ok);
 
     writeFile(artifact, "editor-v1");
@@ -303,7 +601,7 @@ auto tMockHelperRejectsDowngrade = test("Updater/mockHelperRejectsDowngrade") = 
     auto downgradePlan = Updater::planInstall(catalog,
                                              helper.receipts(),
                                              "tamber.editor",
-                                             "test-platform",
+                                             Platform::MacOS,
                                              artifact.string());
     auto result = helper.submit(downgradePlan);
 
@@ -324,10 +622,10 @@ auto tPlanUpdateAllFindsNewerInstalledProduct =
     catalog.products[0].latestVersion = "2.0.0";
 
     auto receipts = eacp::Vector<Updater::ProductReceipt>();
-    receipts.add({.productId = "tamber.editor", .version = "1.0.0"});
+    receipts.add(makeReceipt("tamber.editor", "1.0.0"));
 
     auto plan = Updater::planUpdateAll(
-        catalog, receipts, "test-platform", staging.string());
+        catalog, receipts, Platform::MacOS, staging.string());
 
     check(plan.operations.size() == 1);
     check(plan.operations[0].action == Updater::PlanAction::Update);
@@ -344,11 +642,10 @@ auto tMockHelperRemovesReceiptAndInstall =
 
     auto hash = eacp::Crypto::sha256File(artifact.string());
     auto catalog = makeCatalog(hash);
-    auto helper = Updater::MockPrivilegedHelper(
-        {.root = root.string(), .stagingRoot = staging.string()});
+    auto helper = Updater::MockPrivilegedHelper(makeHelperOptions(root, staging));
 
     auto installPlan = Updater::planInstall(
-        catalog, {}, "tamber.editor", "test-platform", artifact.string());
+        catalog, {}, "tamber.editor", Platform::MacOS, artifact.string());
     check(helper.submit(installPlan).ok);
 
     auto removePlan = Updater::planRemove("tamber.editor");

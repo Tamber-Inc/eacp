@@ -2,11 +2,14 @@
 
 #include <eacp/Core/Utils/SHA256.h>
 
+#include "PrivilegedHelperClient.h"
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 
 namespace fs = std::filesystem;
@@ -14,9 +17,12 @@ namespace Updater = eacp::Updater;
 
 namespace
 {
-constexpr auto* platform = "dev";
-constexpr auto* editorId = "tamber.editor";
-constexpr auto* captureId = "tamber.capture";
+constexpr auto platform = Updater::Platform::MacOS;
+constexpr auto architecture = Updater::Architecture::Universal;
+constexpr std::string_view editorId = "tamber.editor";
+constexpr std::string_view captureId = "tamber.capture";
+constexpr std::string_view runtimeId = "shared.onnxruntime";
+constexpr std::string_view modelId = "shared.clap";
 
 struct CliOptions
 {
@@ -30,6 +36,30 @@ void writeFile(const fs::path& path, const std::string& text)
     fs::create_directories(path.parent_path());
     auto out = std::ofstream(path, std::ios::binary | std::ios::trunc);
     out << text;
+}
+
+std::string stringFrom(std::string_view value)
+{
+    return std::string(value);
+}
+
+Updater::Target makeTarget()
+{
+    auto target = Updater::Target();
+    target.platform = platform;
+    target.architecture = architecture;
+    return target;
+}
+
+Updater::ProductArtifact makeArtifact(const fs::path& artifact)
+{
+    auto out = Updater::ProductArtifact();
+    out.platform = platform;
+    out.architecture = architecture;
+    out.url = "file://" + artifact.string();
+    out.sha256 = eacp::Crypto::sha256File(artifact.string());
+    out.signature = "dev-signature-placeholder";
+    return out;
 }
 
 std::string readFile(const fs::path& path)
@@ -51,24 +81,44 @@ fs::path stagingRoot(const fs::path& root)
     return root / "staging";
 }
 
-fs::path artifactPath(const fs::path& root, const std::string& productId)
+fs::path runningRoot(const fs::path& root)
 {
-    return stagingRoot(root) / (productId + ".artifact");
+    return root / "running";
+}
+
+fs::path runningPath(const fs::path& root, const std::string& productId)
+{
+    return runningRoot(root) / (productId + ".running");
+}
+
+Updater::MockHelperOptions makeHelperOptions(const fs::path& root)
+{
+    auto options = Updater::MockHelperOptions();
+    options.root = root.string();
+    options.stagingRoot = stagingRoot(root).string();
+    return options;
+}
+
+fs::path artifactPath(const fs::path& root, std::string_view productId)
+{
+    return stagingRoot(root) / (stringFrom(productId) + ".artifact");
 }
 
 Updater::Product makeProduct(const std::string& id,
                              const std::string& name,
+                             Updater::PackageKind kind,
                              const std::string& version,
-                             const fs::path& artifact)
+                             const fs::path& artifact,
+                             const eacp::Vector<std::string>& dependencies = {})
 {
-    auto product = Updater::Product {.id = id,
-                                     .name = name,
-                                     .channel = "stable",
-                                     .latestVersion = version};
-    product.artifacts.add({.platform = platform,
-                           .url = "file://" + artifact.string(),
-                           .sha256 = eacp::Crypto::sha256File(artifact.string()),
-                           .signature = "dev-signature-placeholder"});
+    auto product = Updater::Product();
+    product.id = id;
+    product.name = name;
+    product.kind = kind;
+    product.channel = "stable";
+    product.latestVersion = version;
+    product.dependencies = dependencies;
+    product.artifacts.add(makeArtifact(artifact));
     return product;
 }
 
@@ -76,22 +126,48 @@ Updater::ProductCatalog writeDevCatalog(const fs::path& root, bool updateEditor)
 {
     auto editorArtifact = artifactPath(root, editorId);
     auto captureArtifact = artifactPath(root, captureId);
+    auto runtimeArtifact = artifactPath(root, runtimeId);
+    auto modelArtifact = artifactPath(root, modelId);
 
     writeFile(editorArtifact,
               updateEditor ? "Example Editor payload v2"
                            : "Example Editor payload v1");
     writeFile(captureArtifact, "Example Capture payload v1");
+    writeFile(runtimeArtifact, "ONNX Runtime payload v1");
+    writeFile(modelArtifact, updateEditor ? "CLAP model payload v2"
+                                          : "CLAP model payload v1");
 
-    auto catalog = Updater::ProductCatalog {
-        .catalogVersion = updateEditor ? 2 : 1,
-        .signature = "dev-catalog-signature-placeholder"};
+    auto catalog = Updater::ProductCatalog();
+    catalog.catalogVersion = updateEditor ? 2 : 1;
+    catalog.signature = "dev-catalog-signature-placeholder";
 
-    catalog.products.add(makeProduct(editorId,
-                                     "Example Editor",
+    catalog.products.add(makeProduct(stringFrom(runtimeId),
+                                     "ONNX Runtime",
+                                     Updater::PackageKind::Runtime,
+                                     "1.0.0",
+                                     runtimeArtifact));
+    catalog.products.add(makeProduct(stringFrom(modelId),
+                                     "CLAP Model",
+                                     Updater::PackageKind::Model,
                                      updateEditor ? "2.0.0" : "1.0.0",
-                                     editorArtifact));
-    catalog.products.add(
-        makeProduct(captureId, "Example Capture", "1.0.0", captureArtifact));
+                                     modelArtifact));
+
+    auto appDeps = eacp::Vector<std::string>();
+    appDeps.add(stringFrom(runtimeId));
+    appDeps.add(stringFrom(modelId));
+
+    catalog.products.add(makeProduct(stringFrom(editorId),
+                                     "Example Editor",
+                                     Updater::PackageKind::App,
+                                     updateEditor ? "2.0.0" : "1.0.0",
+                                     editorArtifact,
+                                     appDeps));
+    catalog.products.add(makeProduct(stringFrom(captureId),
+                                     "Example Capture",
+                                     Updater::PackageKind::App,
+                                     "1.0.0",
+                                     captureArtifact,
+                                     appDeps));
 
     writeFile(catalogPath(root), Updater::catalogToJson(catalog));
     return catalog;
@@ -108,8 +184,40 @@ Updater::ProductCatalog loadOrCreateCatalog(const fs::path& root)
 
 Updater::MockPrivilegedHelper makeHelper(const fs::path& root)
 {
-    return Updater::MockPrivilegedHelper(
-        {.root = root.string(), .stagingRoot = stagingRoot(root).string()});
+    return Updater::MockPrivilegedHelper(makeHelperOptions(root));
+}
+
+bool isRunning(const fs::path& root, const std::string& productId)
+{
+    auto ec = std::error_code();
+    return fs::exists(runningPath(root, productId), ec);
+}
+
+eacp::Vector<std::string> runningProducts(const fs::path& root)
+{
+    auto out = eacp::Vector<std::string>();
+    auto ec = std::error_code();
+    auto dir = runningRoot(root);
+    if (!fs::exists(dir, ec))
+        return out;
+
+    for (const auto& entry: fs::directory_iterator(dir, ec))
+    {
+        if (ec || !entry.is_regular_file())
+            continue;
+
+        auto name = entry.path().filename().string();
+        constexpr auto suffix = std::string_view(".running");
+        if (name.size() <= suffix.size()
+            || name.compare(name.size() - suffix.size(),
+                            suffix.size(),
+                            suffix) != 0)
+            continue;
+
+        out.add(name.substr(0, name.size() - suffix.size()));
+    }
+
+    return out;
 }
 
 std::optional<CliOptions> parseArgs(int argc, char* argv[])
@@ -157,11 +265,17 @@ void printUsage()
         << "  AppHub [--root <path>] list\n"
         << "  AppHub [--root <path>] status\n"
         << "  AppHub [--root <path>] install <product-id>\n"
+        << "  AppHub [--root <path>] open <product-id>\n"
+        << "  AppHub [--root <path>] close <product-id>\n"
+        << "  AppHub [--root <path>] publish-update\n"
+        << "  AppHub [--root <path>] bless-helper\n"
         << "  AppHub [--root <path>] update\n"
         << "  AppHub [--root <path>] remove <product-id>\n\n"
         << "Products:\n"
         << "  " << editorId << "\n"
-        << "  " << captureId << "\n";
+        << "  " << captureId << "\n"
+        << "  " << runtimeId << "\n"
+        << "  " << modelId << "\n";
 }
 
 void printStatus(const fs::path& root,
@@ -192,6 +306,8 @@ void printStatus(const fs::path& root,
             std::cout << "installed " << receipt->version;
             if (updateAvailable)
                 std::cout << " | update available";
+            if (isRunning(root, product.id))
+                std::cout << " | running";
             std::cout << "\n";
         }
     }
@@ -245,11 +361,11 @@ int installProduct(const fs::path& root, const std::string& productId)
 {
     auto catalog = loadOrCreateCatalog(root);
     auto helper = makeHelper(root);
-    auto plan = Updater::planInstall(catalog,
-                                     helper.receipts(),
-                                     productId,
-                                     platform,
-                                     artifactPath(root, productId).string());
+    auto plan = Updater::planInstallWithDependencies(catalog,
+                                                     helper.receipts(),
+                                                     productId,
+                                                     makeTarget(),
+                                                     stagingRoot(root).string());
 
     if (plan.operations.empty())
     {
@@ -262,10 +378,13 @@ int installProduct(const fs::path& root, const std::string& productId)
 
 int updateAll(const fs::path& root)
 {
-    auto catalog = writeDevCatalog(root, true);
+    auto catalog = loadOrCreateCatalog(root);
     auto helper = makeHelper(root);
     auto plan =
-        Updater::planUpdateAll(catalog, helper.receipts(), platform, stagingRoot(root).string());
+        Updater::planUpdateAll(catalog,
+                               helper.receipts(),
+                               makeTarget(),
+                               stagingRoot(root).string());
 
     if (plan.operations.empty())
     {
@@ -273,7 +392,67 @@ int updateAll(const fs::path& root)
         return 0;
     }
 
+    auto running = runningProducts(root);
+    if (!running.empty())
+    {
+        std::cout << "Update all: waiting for apps to close";
+        for (const auto& productId: running)
+            std::cout << " " << productId;
+        std::cout << "\n";
+        return 0;
+    }
+
     return printResult("Update all", helper.submit(plan));
+}
+
+int publishUpdate(const fs::path& root)
+{
+    writeDevCatalog(root, true);
+    std::cout << "Published catalog version 2 with updates for "
+              << modelId << " and " << editorId << "\n";
+    return 0;
+}
+
+int blessHelper()
+{
+    auto result = AppHub::installPrivilegedHelper();
+    if (!result.ok)
+    {
+        std::cout << "Bless helper: " << result.error << "\n";
+        return 1;
+    }
+
+    std::cout << "Bless helper: ok\n";
+    return 0;
+}
+
+int openProduct(const fs::path& root, const std::string& productId)
+{
+    auto helper = makeHelper(root);
+    auto* receipt = Updater::findReceipt(helper.receipts(), productId);
+    if (receipt == nullptr)
+    {
+        std::cout << "Open " << productId << ": not installed\n";
+        return 1;
+    }
+
+    writeFile(runningPath(root, productId), "running");
+    std::cout << "Open " << productId << ": ok\n";
+    return 0;
+}
+
+int closeProduct(const fs::path& root, const std::string& productId)
+{
+    auto ec = std::error_code();
+    fs::remove(runningPath(root, productId), ec);
+    if (ec)
+    {
+        std::cout << "Close " << productId << ": " << ec.message() << "\n";
+        return 1;
+    }
+
+    std::cout << "Close " << productId << ": ok\n";
+    return 0;
 }
 
 int removeProduct(const fs::path& root, const std::string& productId)
@@ -289,11 +468,15 @@ int runDemo(const fs::path& root)
     if (status != 0)
         return status;
 
-    status = installProduct(root, editorId);
+    status = installProduct(root, stringFrom(editorId));
     if (status != 0)
         return status;
 
-    status = installProduct(root, captureId);
+    status = installProduct(root, stringFrom(captureId));
+    if (status != 0)
+        return status;
+
+    status = publishUpdate(root);
     if (status != 0)
         return status;
 
@@ -301,7 +484,7 @@ int runDemo(const fs::path& root)
     if (status != 0)
         return status;
 
-    status = removeProduct(root, captureId);
+    status = removeProduct(root, stringFrom(captureId));
     if (status != 0)
         return status;
 
@@ -339,11 +522,14 @@ int runTui(const fs::path& root)
                   << "2. Install Example Editor\n"
                   << "3. Install Example Capture\n"
                   << "4. Update all\n"
-                  << "5. Remove Example Editor\n"
-                  << "6. Remove Example Capture\n"
-                  << "7. Show receipts\n"
-                  << "8. Reset\n"
-                  << "9. Quit\n"
+                  << "5. Open Example Editor\n"
+                  << "6. Close Example Editor\n"
+                  << "7. Publish update\n"
+                  << "8. Remove Example Editor\n"
+                  << "9. Remove Example Capture\n"
+                  << "10. Show receipts\n"
+                  << "11. Reset\n"
+                  << "12. Quit\n"
                   << "> ";
 
         auto choice = std::string();
@@ -353,20 +539,26 @@ int runTui(const fs::path& root)
         if (choice == "1")
             showList(root);
         else if (choice == "2")
-            installProduct(root, editorId);
+            installProduct(root, stringFrom(editorId));
         else if (choice == "3")
-            installProduct(root, captureId);
+            installProduct(root, stringFrom(captureId));
         else if (choice == "4")
             updateAll(root);
         else if (choice == "5")
-            removeProduct(root, editorId);
+            openProduct(root, stringFrom(editorId));
         else if (choice == "6")
-            removeProduct(root, captureId);
+            closeProduct(root, stringFrom(editorId));
         else if (choice == "7")
-            showReceipts(root);
+            publishUpdate(root);
         else if (choice == "8")
+            removeProduct(root, stringFrom(editorId));
+        else if (choice == "9")
+            removeProduct(root, stringFrom(captureId));
+        else if (choice == "10")
+            showReceipts(root);
+        else if (choice == "11")
             resetRoot(root);
-        else if (choice == "9" || choice == "q" || choice == "quit")
+        else if (choice == "12" || choice == "q" || choice == "quit")
             return 0;
         else
             std::cout << "Unknown choice\n";
@@ -410,6 +602,28 @@ int main(int argc, char* argv[])
         }
         return installProduct(options.root, options.productId);
     }
+    if (command == "open")
+    {
+        if (options.productId.empty())
+        {
+            std::cout << "open requires a product id\n";
+            return 2;
+        }
+        return openProduct(options.root, options.productId);
+    }
+    if (command == "close")
+    {
+        if (options.productId.empty())
+        {
+            std::cout << "close requires a product id\n";
+            return 2;
+        }
+        return closeProduct(options.root, options.productId);
+    }
+    if (command == "publish-update")
+        return publishUpdate(options.root);
+    if (command == "bless-helper")
+        return blessHelper();
     if (command == "update")
         return updateAll(options.root);
     if (command == "remove")

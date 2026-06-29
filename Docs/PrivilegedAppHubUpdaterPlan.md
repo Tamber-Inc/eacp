@@ -3,13 +3,15 @@
 ## Goal
 
 Support an Adobe Creative Cloud style hub app that can install, update,
-remove, and launch multiple native apps from one product catalog while writing
-to protected machine-level install locations.
+remove, and launch multiple native apps from one catalog while writing to
+protected machine-level install locations. Apps are not the only installable
+unit: AI models, runtimes, sample packs, scripts, and other binary blobs must be
+first-class packages too.
 
-The framework should provide the updater, catalog, and privileged helper
-building blocks. Product apps should not each own their own privileged updater.
-They should be managed by one hub, one background agent, and one narrowly scoped
-privileged install authority.
+The framework should provide the updater, catalog, package dependency planner,
+and privileged helper building blocks. Product apps should not each own their
+own privileged updater. They should be managed by one hub, one background agent,
+and one narrowly scoped privileged install authority.
 
 ## Target Shape
 
@@ -26,9 +28,9 @@ C:\Program Files\Tamber\Apps\...     protected installed apps on Windows
 
 ### Hub App
 
-- Display installed apps, available apps, versions, channels, and install state.
-- Let users install, update, remove, and launch products.
-- Download product artifacts as the signed-in user.
+- Display installed apps, shared packages, versions, channels, and install state.
+- Let users install, update, remove, and launch app packages.
+- Download package artifacts as the signed-in user.
 - Verify the signed catalog, artifact hash, artifact signature, and version
   policy before asking the helper to install anything.
 - Read helper-owned receipts to display the actual machine state.
@@ -88,18 +90,21 @@ C:\ProgramData\Tamber\
 
 ## Catalog Model
 
-The update feed should be a signed product catalog, not a single-app appcast.
+The update feed should be a signed package catalog, not a single-app appcast.
+An app is one package kind. Shared AI models, runtimes, and opaque blobs are
+other package kinds and can be dependencies of many apps.
 
 ```json
 {
   "catalogVersion": 42,
-  "products": [
+  "packages": [
     {
       "id": "tamber.studio",
       "name": "Tamber Studio",
+      "kind": "App",
       "channel": "stable",
       "latestVersion": "3.4.1",
-      "dependencies": ["tamber.runtime"],
+      "dependencies": ["shared.onnxruntime", "model.clap"],
       "artifacts": {
         "macos-arm64": {
           "url": "https://updates.example.com/tamber-studio-3.4.1-arm64.pkg",
@@ -108,6 +113,21 @@ The update feed should be a signed product catalog, not a single-app appcast.
         },
         "windows-x64": {
           "url": "https://updates.example.com/tamber-studio-3.4.1-x64.msi",
+          "sha256": "...",
+          "signature": "..."
+        }
+      }
+    },
+    {
+      "id": "model.clap",
+      "name": "CLAP Model",
+      "kind": "Model",
+      "channel": "stable",
+      "latestVersion": "c-a13f9a0db421",
+      "dependencies": [],
+      "artifacts": {
+        "any-any": {
+          "url": "https://updates.example.com/components/model.clap/c-a13f9a0db421.zip",
           "sha256": "...",
           "signature": "..."
         }
@@ -121,11 +141,13 @@ The update feed should be a signed product catalog, not a single-app appcast.
 ## Receipt Model
 
 Receipts are helper-owned machine state. The hub reads them, but does not write
-them.
+them. There is one receipt per installed package, including shared models and
+runtimes.
 
 ```json
 {
   "productId": "tamber.studio",
+  "kind": "App",
   "version": "3.4.1",
   "installPath": "/Applications/Tamber Apps/Tamber Studio.app",
   "channel": "stable",
@@ -137,6 +159,7 @@ them.
 Receipts let the hub answer:
 
 - Is this product installed?
+- Are its shared package dependencies installed?
 - Which version and channel are installed?
 - Which artifact produced the installation?
 - Is a rollback version available?
@@ -147,8 +170,8 @@ Receipts let the hub answer:
 ```text
 Hub/Agent checks catalog
 Hub verifies catalog signature and monotonic catalog version
-Hub computes install/update/remove plan
-Hub downloads artifacts to user cache
+Hub computes install/update/remove plan, including shared dependencies
+Hub downloads package artifacts to user cache
 Hub verifies artifact hash, artifact signature, and version policy
 Hub asks helper to install product X version Y from staged file Z
 Helper validates caller and request
@@ -162,19 +185,19 @@ Helper reports success or failure
 Hub updates UI from receipts
 ```
 
-For multi-product operations, the catalog produces a dependency-aware plan:
+For multi-package operations, the catalog produces a dependency-aware plan:
 
 ```cpp
 auto plan = catalog.plan({
-    .install = {"tamber.studio"},
-    .update = {"tamber.capture"},
+    .install = {"tamber.studio", "model.clap", "shared.onnxruntime"},
+    .update = {"tamber.capture", "model.whisper"},
     .remove = {"tamber.legacy"}
 });
 ```
 
 The helper should execute plans transactionally where possible:
 
-- Install shared dependencies first.
+- Install shared package dependencies first.
 - Stage all artifacts before replacing live apps.
 - Keep the previous version available for rollback.
 - Write receipts last.
@@ -219,15 +242,51 @@ struct ProductState
     bool running = false;
 };
 
-struct ProductArtifact
+enum class Platform
 {
+    Any,
+    Windows,
+    MacOS,
+    Linux
+};
+
+enum class Architecture
+{
+    Any,
+    X64,
+    Arm64,
+    Universal
+};
+
+template <typename PlatformEnum>
+struct PlatformTraits;
+
+template <typename ArchitectureEnum>
+struct ArchitectureTraits;
+
+template <typename PlatformEnum = Platform,
+          typename ArchitectureEnum = Architecture>
+struct TargetT
+{
+    PlatformEnum platform = PlatformEnum {};
+    ArchitectureEnum architecture = ArchitectureEnum {};
+};
+
+template <typename PlatformEnum = Platform,
+          typename ArchitectureEnum = Architecture>
+struct ProductArtifactT
+{
+    PlatformEnum platform = PlatformEnum {};
+    ArchitectureEnum architecture = ArchitectureEnum {};
     ProductId productId;
     std::string version;
-    std::string platform;
     std::string url;
     std::string sha256;
     std::string signature;
 };
+
+using Target = TargetT<Platform, Architecture>;
+using ProductArtifact = ProductArtifactT<Platform, Architecture>;
 
 struct InstallPlan
 {
@@ -268,6 +327,12 @@ public:
 };
 }
 ```
+
+The default aliases use EACP's own platform and architecture enums. A hub with
+its own platform domain can use `TargetT<HubPlatform, HubArchitecture>` and the
+matching templated catalog/artifact types, then specialize `PlatformTraits` and
+`ArchitectureTraits` for domain-specific fallback behavior such as `Any` or
+`Universal`.
 
 ## CMake Additions
 

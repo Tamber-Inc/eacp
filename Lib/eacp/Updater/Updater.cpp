@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <set>
 #include <sstream>
 #include <system_error>
 #include <utility>
@@ -167,12 +168,17 @@ struct PreparedOperation
 
 InstallResult ok()
 {
-    return {.ok = true};
+    auto result = InstallResult();
+    result.ok = true;
+    return result;
 }
 
 InstallResult error(std::string message)
 {
-    return {.ok = false, .error = std::move(message)};
+    auto result = InstallResult();
+    result.ok = false;
+    result.error = std::move(message);
+    return result;
 }
 
 bool hasDuplicateProductOperation(const InstallPlan& plan,
@@ -184,6 +190,46 @@ bool hasDuplicateProductOperation(const InstallPlan& plan,
             ++count;
 
     return count > 1;
+}
+
+Target makeTarget(Platform platform, Architecture architecture)
+{
+    auto target = Target();
+    target.platform = platform;
+    target.architecture = architecture;
+    return target;
+}
+
+PlanOperation makeOperation(PlanAction action,
+                            const std::string& productId,
+                            const std::string& name = {},
+                            const std::string& channel = {},
+                            const std::string& version = {},
+                            const std::string& artifactPath = {},
+                            const std::string& artifactSha256 = {})
+{
+    auto operation = PlanOperation();
+    operation.action = action;
+    operation.productId = productId;
+    operation.name = name;
+    operation.channel = channel;
+    operation.version = version;
+    operation.artifactPath = artifactPath;
+    operation.artifactSha256 = artifactSha256;
+    return operation;
+}
+
+ProductReceipt makeReceipt(const PlanOperation& op, const fs::path& productDir)
+{
+    auto receipt = ProductReceipt();
+    receipt.productId = op.productId;
+    receipt.name = op.name;
+    receipt.version = op.version;
+    receipt.installPath = productDir.string();
+    receipt.channel = op.channel;
+    receipt.artifactSha256 = op.artifactSha256;
+    receipt.installedAt = nowUtcForReceipt();
+    return receipt;
 }
 
 InstallResult prepareOperation(const MockHelperOptions& options,
@@ -238,13 +284,7 @@ InstallResult prepareOperation(const MockHelperOptions& options,
         && compareVersions(op.version, existing->version) < 0)
         return error("downgrade rejected");
 
-    out.receipt = ProductReceipt {.productId = op.productId,
-                                  .name = op.name,
-                                  .version = op.version,
-                                  .installPath = out.productDir.string(),
-                                  .channel = op.channel,
-                                  .artifactSha256 = op.artifactSha256,
-                                  .installedAt = nowUtcForReceipt()};
+    out.receipt = makeReceipt(op, out.productDir);
 
     return ok();
 }
@@ -269,7 +309,7 @@ InstallResult preparePlan(const MockHelperOptions& options,
 
 InstallResult executeRemove(const PreparedOperation& op)
 {
-    std::error_code ec;
+    auto ec = std::error_code{};
     fs::remove_all(op.productDir, ec);
     if (ec)
         return error("failed to remove product");
@@ -283,7 +323,7 @@ InstallResult executeRemove(const PreparedOperation& op)
 
 InstallResult executeInstall(const PreparedOperation& op)
 {
-    std::error_code ec;
+    auto ec = std::error_code{};
     fs::remove_all(op.installStagingDir, ec);
     fs::create_directories(op.installStagingDir, ec);
     if (ec)
@@ -329,6 +369,7 @@ ProductCatalog parseCatalogJson(const std::string& json)
     return catalog;
 }
 
+// @claude this is a nonsense function. delete it.
 std::string catalogToJson(const ProductCatalog& catalog)
 {
     return Miro::toJSONString(catalog);
@@ -418,20 +459,20 @@ bool isValidProductId(const std::string& productId)
     return true;
 }
 
-ProductArtifact artifactForPlatform(const Product& product,
-                                    const std::string& platform)
+ProductArtifact artifactForPlatform(const Product& product, Platform platform)
 {
-    for (const auto& artifact: product.artifacts)
-        if (artifact.platform == platform)
-            return artifact;
+    return artifactForTarget(product, makeTarget(platform, Architecture::Any));
+}
 
-    return {};
+ProductArtifact artifactForTarget(const Product& product, const Target& target)
+{
+    return artifactForTargetT(product, target);
 }
 
 InstallPlan planInstall(const ProductCatalog& catalog,
                         const Vector<ProductReceipt>& receipts,
                         const std::string& productId,
-                        const std::string& platform,
+                        Platform platform,
                         const std::string& artifactPath)
 {
     auto plan = InstallPlan();
@@ -443,26 +484,98 @@ InstallPlan planInstall(const ProductCatalog& catalog,
         return plan;
 
     auto artifact = artifactForPlatform(*product, platform);
-    if (artifact.platform.empty())
+    if (artifact.url.empty())
         return plan;
 
     auto action = findReceipt(receipts, productId) == nullptr
                 ? PlanAction::Install
                 : PlanAction::Update;
 
-    plan.operations.add({.action = action,
-                         .productId = product->id,
-                         .name = product->name,
-                         .channel = product->channel,
-                         .version = product->latestVersion,
-                         .artifactPath = artifactPath,
-                         .artifactSha256 = artifact.sha256});
+    plan.operations.add(makeOperation(action,
+                                      product->id,
+                                      product->name,
+                                      product->channel,
+                                      product->latestVersion,
+                                      artifactPath,
+                                      artifact.sha256));
+    return plan;
+}
+
+namespace
+{
+void appendInstallWithDependencies(const ProductCatalog& catalog,
+                                   const Vector<ProductReceipt>& receipts,
+                                   const std::string& productId,
+                                   const Target& target,
+                                   const std::string& artifactDirectory,
+                                   std::set<std::string>& visiting,
+                                   std::set<std::string>& planned,
+                                   InstallPlan& plan)
+{
+    if (!isValidProductId(productId) || planned.contains(productId)
+        || visiting.contains(productId))
+        return;
+
+    auto* product = findProduct(catalog, productId);
+    if (product == nullptr)
+        return;
+
+    visiting.insert(productId);
+    for (const auto& dependency: product->dependencies)
+        appendInstallWithDependencies(catalog,
+                                      receipts,
+                                      dependency,
+                                      target,
+                                      artifactDirectory,
+                                      visiting,
+                                      planned,
+                                      plan);
+    visiting.erase(productId);
+
+    auto artifact = artifactForTarget(*product, target);
+    if (artifact.url.empty())
+        return;
+
+    auto action = findReceipt(receipts, productId) == nullptr
+                ? PlanAction::Install
+                : PlanAction::Update;
+
+    plan.operations.add(makeOperation(action,
+                                      product->id,
+                                      product->name,
+                                      product->channel,
+                                      product->latestVersion,
+                                      artifactPathFor(artifactDirectory,
+                                                      product->id),
+                                      artifact.sha256));
+    planned.insert(productId);
+}
+} // namespace
+
+InstallPlan planInstallWithDependencies(const ProductCatalog& catalog,
+                                        const Vector<ProductReceipt>& receipts,
+                                        const std::string& productId,
+                                        const Target& target,
+                                        const std::string& artifactDirectory)
+{
+    auto plan = InstallPlan();
+    auto visiting = std::set<std::string>();
+    auto planned = std::set<std::string>();
+
+    appendInstallWithDependencies(catalog,
+                                  receipts,
+                                  productId,
+                                  target,
+                                  artifactDirectory,
+                                  visiting,
+                                  planned,
+                                  plan);
     return plan;
 }
 
 InstallPlan planUpdateAll(const ProductCatalog& catalog,
                           const Vector<ProductReceipt>& receipts,
-                          const std::string& platform,
+                          Platform platform,
                           const std::string& artifactDirectory)
 {
     auto plan = InstallPlan();
@@ -480,17 +593,53 @@ InstallPlan planUpdateAll(const ProductCatalog& catalog,
             continue;
 
         auto artifact = artifactForPlatform(product, platform);
-        if (artifact.platform.empty())
+        if (artifact.url.empty())
             continue;
 
-        plan.operations.add({.action = PlanAction::Update,
-                             .productId = product.id,
-                             .name = product.name,
-                             .channel = product.channel,
-                             .version = product.latestVersion,
-                             .artifactPath = artifactPathFor(artifactDirectory,
-                                                             product.id),
-                             .artifactSha256 = artifact.sha256});
+        plan.operations.add(makeOperation(PlanAction::Update,
+                                          product.id,
+                                          product.name,
+                                          product.channel,
+                                          product.latestVersion,
+                                          artifactPathFor(artifactDirectory,
+                                                          product.id),
+                                          artifact.sha256));
+    }
+
+    return plan;
+}
+
+InstallPlan planUpdateAll(const ProductCatalog& catalog,
+                          const Vector<ProductReceipt>& receipts,
+                          const Target& target,
+                          const std::string& artifactDirectory)
+{
+    auto plan = InstallPlan();
+
+    for (const auto& product: catalog.products)
+    {
+        if (!isValidProductId(product.id))
+            continue;
+
+        auto* receipt = findReceipt(receipts, product.id);
+        if (receipt == nullptr)
+            continue;
+
+        if (!isNewerVersion(product.latestVersion, receipt->version))
+            continue;
+
+        auto artifact = artifactForTarget(product, target);
+        if (artifact.url.empty())
+            continue;
+
+        plan.operations.add(makeOperation(PlanAction::Update,
+                                          product.id,
+                                          product.name,
+                                          product.channel,
+                                          product.latestVersion,
+                                          artifactPathFor(artifactDirectory,
+                                                          product.id),
+                                          artifact.sha256));
     }
 
     return plan;
@@ -500,7 +649,7 @@ InstallPlan planRemove(const std::string& productId)
 {
     auto plan = InstallPlan();
     if (isValidProductId(productId))
-        plan.operations.add({.action = PlanAction::Remove, .productId = productId});
+        plan.operations.add(makeOperation(PlanAction::Remove, productId));
     return plan;
 }
 
@@ -564,7 +713,7 @@ Vector<ProductReceipt> MockPrivilegedHelper::receipts() const
 InstallResult MockPrivilegedHelper::submit(const InstallPlan& plan)
 {
     if (!isInstalled())
-        return {.ok = false, .error = "helper root could not be created"};
+        return error("helper root could not be created");
 
     auto prepared = Vector<PreparedOperation>();
     if (auto result = preparePlan(options, receipts(), plan, prepared); !result.ok)
@@ -579,7 +728,7 @@ InstallResult MockPrivilegedHelper::submit(const InstallPlan& plan)
             return result;
     }
 
-    return {.ok = true};
+    return ok();
 }
 
 std::string MockPrivilegedHelper::applicationsRoot() const
