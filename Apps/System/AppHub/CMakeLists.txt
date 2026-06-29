@@ -32,6 +32,18 @@ set(EACP_APPHUB_MANUAL_CATALOG_PATH
     "${EACP_APPHUB_DEV_CATALOG_PATH}"
     CACHE STRING
     "Optional AppHub manual product catalog path; overrides remote catalog fetches")
+set(EACP_APPHUB_CHANNEL
+    "stable"
+    CACHE STRING
+    "Default AppHub update/catalog channel")
+set(EACP_APPHUB_CHANNEL_RELEASE_BASE_URL
+    "https://github.com/Tamber-Inc/eacp/releases/download"
+    CACHE STRING
+    "Base URL for AppHub channel releases")
+set(EACP_APPHUB_CHANNEL_RELEASE_TAG_PREFIX
+    "apphub-channel-"
+    CACHE STRING
+    "Release tag prefix for non-stable AppHub channels")
 set(EACP_APPHUB_APP_SIGNING_REQUIREMENT
     "identifier \"${EACP_APPHUB_BUNDLE_ID}\" and anchor apple generic"
     CACHE STRING
@@ -80,8 +92,19 @@ if (TARGET AppHubSchema_Codegen)
             EACP_APPHUB_DEMO_MANIFEST_URL="${EACP_APPHUB_DEMO_MANIFEST_URL}"
             EACP_APPHUB_MANIFEST_URL="${EACP_APPHUB_MANIFEST_URL}"
             EACP_APPHUB_CATALOG_URL="${EACP_APPHUB_CATALOG_URL}"
-            EACP_APPHUB_MANUAL_CATALOG_PATH="${EACP_APPHUB_MANUAL_CATALOG_PATH}"
-            EACP_APPHUB_DEV_CATALOG_PATH="${EACP_APPHUB_DEV_CATALOG_PATH}")
+            EACP_APPHUB_CHANNEL="${EACP_APPHUB_CHANNEL}"
+            EACP_APPHUB_CHANNEL_RELEASE_BASE_URL="${EACP_APPHUB_CHANNEL_RELEASE_BASE_URL}"
+            EACP_APPHUB_CHANNEL_RELEASE_TAG_PREFIX="${EACP_APPHUB_CHANNEL_RELEASE_TAG_PREFIX}")
+    if (EACP_APPHUB_MANUAL_CATALOG_PATH)
+        target_compile_definitions(AppHubSchema_Codegen
+            PRIVATE
+                EACP_APPHUB_MANUAL_CATALOG_PATH="${EACP_APPHUB_MANUAL_CATALOG_PATH}")
+    endif ()
+    if (EACP_APPHUB_DEV_CATALOG_PATH)
+        target_compile_definitions(AppHubSchema_Codegen
+            PRIVATE
+                EACP_APPHUB_DEV_CATALOG_PATH="${EACP_APPHUB_DEV_CATALOG_PATH}")
+    endif ()
 endif ()
 
 set_default_target_setting(AppHub)
@@ -93,9 +116,21 @@ target_compile_definitions(AppHub
         EACP_APPHUB_DEMO_MANIFEST_URL="${EACP_APPHUB_DEMO_MANIFEST_URL}"
         EACP_APPHUB_MANIFEST_URL="${EACP_APPHUB_MANIFEST_URL}"
         EACP_APPHUB_CATALOG_URL="${EACP_APPHUB_CATALOG_URL}"
-        EACP_APPHUB_MANUAL_CATALOG_PATH="${EACP_APPHUB_MANUAL_CATALOG_PATH}"
-        EACP_APPHUB_DEV_CATALOG_PATH="${EACP_APPHUB_DEV_CATALOG_PATH}"
+        EACP_APPHUB_CHANNEL="${EACP_APPHUB_CHANNEL}"
+        EACP_APPHUB_CHANNEL_RELEASE_BASE_URL="${EACP_APPHUB_CHANNEL_RELEASE_BASE_URL}"
+        EACP_APPHUB_CHANNEL_RELEASE_TAG_PREFIX="${EACP_APPHUB_CHANNEL_RELEASE_TAG_PREFIX}"
 )
+
+if (EACP_APPHUB_MANUAL_CATALOG_PATH)
+    target_compile_definitions(AppHub
+        PRIVATE
+            EACP_APPHUB_MANUAL_CATALOG_PATH="${EACP_APPHUB_MANUAL_CATALOG_PATH}")
+endif ()
+if (EACP_APPHUB_DEV_CATALOG_PATH)
+    target_compile_definitions(AppHub
+        PRIVATE
+            EACP_APPHUB_DEV_CATALOG_PATH="${EACP_APPHUB_DEV_CATALOG_PATH}")
+endif ()
 
 if (APPLE)
     configure_file(

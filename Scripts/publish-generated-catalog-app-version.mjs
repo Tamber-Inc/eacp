@@ -18,6 +18,12 @@ import {
   findCatalogAppBundle,
 } from './lib/apphub-generated-catalog.mjs';
 import {
+  normalizeChannel,
+  releaseTagForChannel,
+  stableChannel,
+  stableReleaseTag,
+} from './lib/apphub-channel.mjs';
+import {
   ensureTamberSigningIdentity,
   notarizeAndStapleApps,
   signPath,
@@ -28,11 +34,15 @@ import {
 } from './lib/macos-signing.mjs';
 
 const version = env('VERSION', '2.0.0');
-const releaseTag = env('RELEASE_TAG', 'remote-demo-v1');
-const releaseBaseUrl = env(
-  'RELEASE_BASE_URL',
-  `https://github.com/Tamber-Inc/eacp/releases/download/${releaseTag}`,
-);
+const channel = normalizeChannel(env('APPHUB_CHANNEL', env('CHANNEL', 'stable')));
+const stableTag = env('RELEASE_TAG', stableReleaseTag);
+const releaseTag = channel === stableChannel ? stableTag : releaseTagForChannel(channel);
+const releaseBaseUrl = channel === stableChannel
+  ? env(
+    'RELEASE_BASE_URL',
+    `https://github.com/Tamber-Inc/eacp/releases/download/${releaseTag}`,
+  )
+  : `https://github.com/Tamber-Inc/eacp/releases/download/${releaseTag}`;
 const productId = envNonEmpty('APPHUB_CATALOG_PRODUCT_ID', 'com.eacp.maze');
 const target = envNonEmpty('APPHUB_CATALOG_TARGET', 'Maze');
 const outDir = env('OUT_DIR', join(repoRoot, `dist/generated-catalog-${target}-${version}`));
@@ -45,18 +55,7 @@ requireMacOS(`Generated catalog app update publishing for ${productId}`);
 log('Download current AppHub catalog');
 cleanDir(outDir);
 const catalogPath = join(outDir, 'apphub-catalog.json');
-const catalogResult = capture('gh', [
-  'release',
-  'download',
-  releaseTag,
-  '--repo',
-  releaseRepo,
-  '--pattern',
-  'apphub-catalog.json',
-  '--dir',
-  outDir,
-], { check: false });
-if (catalogResult.status !== 0) {
+if (!downloadCatalog(releaseTag) && (channel === 'stable' || !downloadCatalog(stableReleaseTag))) {
   throw new Error('Cannot publish an independent catalog app update before apphub-catalog.json exists');
 }
 
@@ -120,6 +119,7 @@ verifyGatekeeperApp(packagedApp);
 
 const productEntry = {
   ...currentProduct,
+  channel,
   latestVersion: version,
   artifacts: [
     {
@@ -145,6 +145,7 @@ const nextCatalog = {
 writeJson(catalogPath, nextCatalog);
 
 log(`Upload ${currentProduct.name} ${version} and updated catalog`);
+ensureRelease(releaseTag, `AppHub channel ${channel}`);
 run('gh', [
   'release',
   'upload',
@@ -158,6 +159,45 @@ run('gh', [
 
 log(`Published ${currentProduct.name} ${version}`);
 console.log(JSON.stringify(productEntry, null, 2));
+
+function downloadCatalog(tag) {
+  const result = capture('gh', [
+    'release',
+    'download',
+    tag,
+    '--repo',
+    releaseRepo,
+    '--pattern',
+    'apphub-catalog.json',
+    '--dir',
+    outDir,
+    '--clobber',
+  ], { check: false });
+  return result.status === 0;
+}
+
+function ensureRelease(tag, title) {
+  const view = capture('gh', [
+    'release',
+    'view',
+    tag,
+    '--repo',
+    releaseRepo,
+  ], { check: false });
+  if (view.status === 0) return;
+
+  run('gh', [
+    'release',
+    'create',
+    tag,
+    '--repo',
+    releaseRepo,
+    '--title',
+    title,
+    '--notes',
+    `Catalog channel '${channel}'.`,
+  ]);
+}
 
 function envNonEmpty(name, fallback) {
   const value = env(name, fallback);

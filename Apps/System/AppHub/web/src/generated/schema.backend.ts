@@ -9,6 +9,8 @@ export function makeBackend(invoke: Invoke)
             invoke('getHubState', {}) as Promise<T.HubState>,
         refresh: (): Promise<T.CommandResult> =>
             invoke('refresh', {}) as Promise<T.CommandResult>,
+        setChannel: (req: T.ChannelRequest): Promise<T.CommandResult> =>
+            invoke('setChannel', req) as Promise<T.CommandResult>,
         checkUpdates: (): Promise<T.CommandResult> =>
             invoke('checkUpdates', {}) as Promise<T.CommandResult>,
         installProduct: (req: T.ProductRequest): Promise<T.CommandResult> =>

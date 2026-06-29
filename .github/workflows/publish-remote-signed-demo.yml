@@ -11,6 +11,10 @@ on:
         description: GitHub Release tag for the signed remote demo.
         required: true
         default: remote-demo-v1
+      channel:
+        description: AppHub catalog channel to publish, e.g. stable, develop, jp/feat/foo. Non-stable maps to apphub-channel-<safe-channel>.
+        required: false
+        default: stable
       include_hub:
         description: Publish a freshly built AppHub artifact as well as the Demo App.
         required: true
@@ -40,6 +44,7 @@ jobs:
       VERSION: ${{ inputs.version }}
       RELEASE_TAG: ${{ inputs.release_tag }}
       RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ inputs.release_tag }}
+      APPHUB_CHANNEL: ${{ inputs.channel }}
       EACP_MACOS_DEPLOYMENT_TARGET: '11.0'
       OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
       GH_TOKEN: ${{ github.token }}

@@ -13,5 +13,5 @@ export const useHubState = makeBridgeStore({
     event: 'hubState',
     fetch: backend.getHubState,
     shouldFetch: isBackendAvailable,
-    initial: {"catalogVersion":0,"demoApp":{"installed":false,"installedVersion":"","latestVersion":"","message":"","name":"","productId":"","updateAvailable":false},"helperState":"Unknown","hubApp":{"installed":false,"installedVersion":"","latestVersion":"","message":"","name":"","productId":"","updateAvailable":false},"hubVersion":"1.0.0","operation":{"bytesReceived":0,"detail":"","kind":"None","productId":"","state":"Idle","title":"","totalBytes":-1},"products":[],"root":""},
+    initial: {"catalogUrl":"","catalogVersion":0,"channel":"stable","demoApp":{"installed":false,"installedVersion":"","latestVersion":"","message":"","name":"","productId":"","updateAvailable":false},"helperState":"Unknown","hubApp":{"installed":false,"installedVersion":"","latestVersion":"","message":"","name":"","productId":"","updateAvailable":false},"hubVersion":"1.0.0","operation":{"bytesReceived":0,"detail":"","kind":"None","productId":"","state":"Idle","title":"","totalBytes":-1},"products":[],"root":""},
 });

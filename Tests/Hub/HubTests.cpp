@@ -153,3 +153,41 @@ auto tManualCatalogCanDriveModelOnlyUpdatePlan =
         check(plan.operations[0].version == "3.0.0");
     }
 };
+
+auto tStableChannelUsesLegacyCatalogUrl =
+    test("Hub/stableChannelUsesLegacyCatalogUrl") = []
+{
+    auto config = Hub::CatalogConfig();
+    config.channel = "stable";
+    config.remoteCatalogUrl =
+        "https://example.test/releases/download/remote-demo-v1/apphub-catalog.json";
+    config.channelReleaseBaseUrl = "https://example.test/releases/download";
+
+    check(Hub::channelReleaseTag(config) == "stable");
+    check(Hub::resolvedCatalogUrl(config) == config.remoteCatalogUrl);
+};
+
+auto tBranchChannelMapsToSafeReleaseTag =
+    test("Hub/branchChannelMapsToSafeReleaseTag") = []
+{
+    auto config = Hub::CatalogConfig();
+    config.channel = "jp/feat/some-random-branch";
+    config.channelReleaseBaseUrl = "https://example.test/releases/download";
+
+    check(Hub::channelReleaseTag(config)
+          == "apphub-channel-jp-feat-some-random-branch");
+    check(Hub::resolvedCatalogUrl(config)
+          == "https://example.test/releases/download/"
+             "apphub-channel-jp-feat-some-random-branch/apphub-catalog.json");
+};
+
+auto tDevelopChannelHasIndependentCache =
+    test("Hub/developChannelHasIndependentCache") = []
+{
+    auto root = testRoot("develop-cache");
+
+    check(Hub::cachedCatalogPath(root, "stable")
+          == root / "remote-downloads" / "apphub-catalog.json");
+    check(Hub::cachedCatalogPath(root, "develop")
+          == root / "remote-downloads" / "catalogs" / "develop.json");
+};

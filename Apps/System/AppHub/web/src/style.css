@@ -31,6 +31,25 @@ button
     cursor: pointer;
 }
 
+input
+{
+    width: 210px;
+    min-height: 34px;
+    border: 1px solid #344249;
+    border-radius: 7px;
+    background: #11191d;
+    color: #edf4f1;
+    padding: 0 10px;
+    font: inherit;
+    font-size: 13px;
+}
+
+input:focus
+{
+    outline: 1px solid #4a9188;
+    border-color: #4a9188;
+}
+
 button:hover:not(:disabled)
 {
     border-color: #5c7c7b;
@@ -120,7 +139,8 @@ p,
 }
 
 .button-row,
-.topbar-actions
+.topbar-actions,
+.channel-form
 {
     display: flex;
     gap: 8px;

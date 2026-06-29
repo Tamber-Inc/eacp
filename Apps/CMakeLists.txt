@@ -30,10 +30,10 @@ if (APPLE AND NOT IOS)
             AND NOT EACP_APPHUB_DISABLE_DEV_CATALOG)
         add_dependencies(AppHub ${EACP_APPHUB_LOCAL_CATALOG_TARGET})
         target_compile_definitions(AppHub PRIVATE
-                EACP_APPHUB_DEV_CATALOG_PATH="${EACP_APPHUB_LOCAL_CATALOG_PATH}")
+                EACP_APPHUB_MANUAL_CATALOG_PATH="${EACP_APPHUB_LOCAL_CATALOG_PATH}")
         if (TARGET AppHub_app)
             target_compile_definitions(AppHub_app PUBLIC
-                    EACP_APPHUB_DEV_CATALOG_PATH="${EACP_APPHUB_LOCAL_CATALOG_PATH}")
+                    EACP_APPHUB_MANUAL_CATALOG_PATH="${EACP_APPHUB_LOCAL_CATALOG_PATH}")
         endif ()
     endif ()
 endif ()

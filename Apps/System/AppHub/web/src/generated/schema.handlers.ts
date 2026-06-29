@@ -3,6 +3,7 @@ import type * as T from './schema';
 export type Handlers = {
     getHubState(): T.HubState | Promise<T.HubState>;
     refresh(): T.CommandResult | Promise<T.CommandResult>;
+    setChannel(req: T.ChannelRequest): T.CommandResult | Promise<T.CommandResult>;
     checkUpdates(): T.CommandResult | Promise<T.CommandResult>;
     installProduct(req: T.ProductRequest): T.CommandResult | Promise<T.CommandResult>;
     updateProduct(req: T.ProductRequest): T.CommandResult | Promise<T.CommandResult>;
@@ -33,6 +34,7 @@ export async function dispatch(handlers: Handlers, command: string, payload: unk
     {
         case 'getHubState': return await handlers.getHubState();
         case 'refresh': return await handlers.refresh();
+        case 'setChannel': return await handlers.setChannel(payload as T.ChannelRequest);
         case 'checkUpdates': return await handlers.checkUpdates();
         case 'installProduct': return await handlers.installProduct(payload as T.ProductRequest);
         case 'updateProduct': return await handlers.updateProduct(payload as T.ProductRequest);

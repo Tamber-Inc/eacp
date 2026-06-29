@@ -443,3 +443,23 @@ auto tUpdateProductUpdatesOnlyRequestedInstalledProduct =
         check(receipt->artifactSha256 == artifactHash);
     }
 };
+
+auto tSetChannelPersistsSelectedChannel =
+    test("AppHub/setChannelPersistsSelectedChannel") = []
+{
+    auto root = testRoot("set-channel");
+    writeCatalog(root);
+
+    auto api = Api::AppHubApi(root);
+    auto result = api.setChannel({.channel = "jp/feat/some-random-branch"});
+    auto state = api.getHubState();
+
+    check(result.ok);
+    check(state.channel == "jp/feat/some-random-branch");
+    check(state.catalogUrl
+          == "https://github.com/Tamber-Inc/eacp/releases/download/"
+             "apphub-channel-jp-feat-some-random-branch/apphub-catalog.json");
+
+    auto reloaded = Api::AppHubApi(root);
+    check(reloaded.getHubState().channel == "jp/feat/some-random-branch");
+};

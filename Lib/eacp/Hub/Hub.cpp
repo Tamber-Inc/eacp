@@ -3,6 +3,7 @@
 #include <eacp/Network/HTTP/Http.h>
 
 #include <chrono>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <thread>
@@ -48,6 +49,47 @@ std::optional<Updater::ProductCatalog> parseCatalog(const std::string& raw)
     }
 }
 
+std::string replaceAll(std::string text,
+                       const std::string& token,
+                       const std::string& replacement)
+{
+    auto pos = std::string::size_type {};
+    while ((pos = text.find(token, pos)) != std::string::npos)
+    {
+        text.replace(pos, token.size(), replacement);
+        pos += replacement.size();
+    }
+    return text;
+}
+
+std::string safeChannelPathName(const std::string& channel)
+{
+    auto out = std::string();
+    auto lastWasDash = false;
+    for (auto c: normalizedChannel(channel))
+    {
+        auto ch = static_cast<unsigned char>(c);
+        auto keep = std::isalnum(ch) || c == '.' || c == '_' || c == '-';
+        if (keep)
+        {
+            out.push_back(c);
+            lastWasDash = false;
+            continue;
+        }
+
+        if (!lastWasDash)
+            out.push_back('-');
+        lastWasDash = true;
+    }
+
+    while (!out.empty() && out.front() == '-')
+        out.erase(out.begin());
+    while (!out.empty() && out.back() == '-')
+        out.pop_back();
+
+    return out.empty() ? "stable" : out;
+}
+
 } // namespace
 
 fs::path remoteDownloadRoot(const fs::path& stateRoot)
@@ -58,6 +100,60 @@ fs::path remoteDownloadRoot(const fs::path& stateRoot)
 fs::path cachedCatalogPath(const fs::path& stateRoot)
 {
     return remoteDownloadRoot(stateRoot) / "apphub-catalog.json";
+}
+
+fs::path cachedCatalogPath(const fs::path& stateRoot, const std::string& channel)
+{
+    auto normalized = normalizedChannel(channel);
+    if (normalized == "stable")
+        return cachedCatalogPath(stateRoot);
+    return remoteDownloadRoot(stateRoot) / "catalogs"
+           / (safeChannelPathName(normalized) + ".json");
+}
+
+std::string normalizedChannel(std::string channel)
+{
+    while (!channel.empty()
+           && std::isspace(static_cast<unsigned char>(channel.front())))
+        channel.erase(channel.begin());
+    while (!channel.empty()
+           && std::isspace(static_cast<unsigned char>(channel.back())))
+        channel.pop_back();
+    return channel.empty() ? "stable" : channel;
+}
+
+std::string channelReleaseTag(const CatalogConfig& config)
+{
+    auto channel = normalizedChannel(config.channel);
+    if (channel == "stable")
+        return "stable";
+    return config.channelReleaseTagPrefix + safeChannelPathName(channel);
+}
+
+std::string resolvedCatalogUrl(const CatalogConfig& config)
+{
+    auto channel = normalizedChannel(config.channel);
+    if (channel == "stable")
+        return config.remoteCatalogUrl;
+
+    auto releaseTag = channelReleaseTag(config);
+    if (!config.channelCatalogUrlTemplate.empty())
+    {
+        auto url = replaceAll(config.channelCatalogUrlTemplate,
+                             "{channel}",
+                             safeChannelPathName(channel));
+        url = replaceAll(url, "{releaseTag}", releaseTag);
+        url = replaceAll(url, "{asset}", config.channelCatalogAssetName);
+        return url;
+    }
+
+    if (config.channelReleaseBaseUrl.empty())
+        return {};
+
+    auto base = config.channelReleaseBaseUrl;
+    while (!base.empty() && base.back() == '/')
+        base.pop_back();
+    return base + "/" + releaseTag + "/" + config.channelCatalogAssetName;
 }
 
 std::optional<Updater::ProductCatalog> loadCatalogFromPath(const fs::path& path)
@@ -71,10 +167,11 @@ std::optional<Updater::ProductCatalog> loadCatalogFromPath(const fs::path& path)
 std::optional<Updater::ProductCatalog> fetchRemoteCatalog(
     const CatalogConfig& config)
 {
-    if (config.remoteCatalogUrl.empty())
+    auto catalogUrl = resolvedCatalogUrl(config);
+    if (catalogUrl.empty())
         return std::nullopt;
 
-    auto response = HTTP::Request(config.remoteCatalogUrl).perform();
+    auto response = HTTP::Request(catalogUrl).perform();
     if (response.statusCode < 200 || response.statusCode >= 300)
         return std::nullopt;
 
@@ -82,7 +179,8 @@ std::optional<Updater::ProductCatalog> fetchRemoteCatalog(
     if (!catalog)
         return std::nullopt;
 
-    writeFile(cachedCatalogPath(config.stateRoot), response.content);
+    writeFile(cachedCatalogPath(config.stateRoot, config.channel),
+              response.content);
     return catalog;
 }
 
@@ -102,7 +200,9 @@ Updater::ProductCatalog loadCatalog(const CatalogConfig& config,
         }
     }
 
-    if (auto cached = loadCatalogFromPath(cachedCatalogPath(config.stateRoot)))
+    if (auto cached =
+            loadCatalogFromPath(cachedCatalogPath(config.stateRoot,
+                                                  config.channel)))
         return *cached;
 
     return fallback();

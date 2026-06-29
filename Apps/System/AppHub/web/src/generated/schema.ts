@@ -44,6 +44,8 @@ export interface HubOperation {
 export interface HubState {
     hubVersion: string;
     root: string;
+    channel: string;
+    catalogUrl: string;
     catalogVersion: number;
     helperState: HubHelperState;
     products: HubProduct[];
@@ -55,6 +57,10 @@ export interface HubState {
 export interface CommandResult {
     ok: boolean;
     message: string;
+}
+
+export interface ChannelRequest {
+    channel: string;
 }
 
 export interface ProductRequest {

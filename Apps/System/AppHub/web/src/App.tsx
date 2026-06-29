@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { backend } from './generated/backend';
 import { useHubState } from './generated/hooks';
 import type {
@@ -62,6 +62,7 @@ const helperStateDetails: Record<HubHelperState, string> = {
 export default function App()
 {
     const state = useHubState();
+    const [channel, setChannel] = useState('');
     const apps = useMemo(
         () => state.products.filter((product) => product.kind === 'App'),
         [state.products],
@@ -76,9 +77,24 @@ export default function App()
             <header className="topbar">
                 <div>
                     <h1>Tamber AppHub</h1>
-                    <p>Hub {state.hubVersion}</p>
+                    <p>Hub {state.hubVersion} · {state.channel}</p>
                 </div>
                 <div className="topbar-actions">
+                    <form
+                        className="channel-form"
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            void backend.setChannel({ channel: channel || state.channel });
+                        }}
+                    >
+                        <input
+                            aria-label="Channel"
+                            placeholder={state.channel || 'stable'}
+                            value={channel}
+                            onChange={(event) => setChannel(event.target.value)}
+                        />
+                        <button type="submit">Switch</button>
+                    </form>
                     <button type="button" onClick={() => void backend.refresh()}>
                         Refresh
                     </button>
