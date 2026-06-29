@@ -97,3 +97,7 @@ finally
     Remove-Item env:EACP_APPHUB_INSTALL_ROOT -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 }
+
+# Assert exits 1 on failure; the last native command above is the intentional
+# hash-mismatch helper run (exit 1), so make success explicit for the CI shell.
+exit 0

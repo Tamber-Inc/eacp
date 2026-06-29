@@ -108,3 +108,7 @@ finally
     Remove-Item env:EACP_APPHUB_DEV_CATALOG_PATH -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 }
+
+# Assert exits 1 on failure; make the success path's exit code explicit so it
+# does not inherit $LASTEXITCODE from an earlier native command.
+exit 0
