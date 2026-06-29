@@ -21,6 +21,7 @@ std::filesystem::path installedHubAppExecutablePath();
 std::optional<std::filesystem::path> currentExecutablePath();
 bool createAppBundleZip(const std::filesystem::path& bundle,
                         const std::filesystem::path& output);
+bool isAppBundleRunning(std::string_view appPath);
 
 struct LaunchResult
 {

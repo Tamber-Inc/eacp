@@ -88,7 +88,7 @@ jobs:
           op run
           --env-file=.github/op/tamber-signing.env
           --
-          node Scripts/publish-remote-demo-app-version.mjs
+          node Scripts/build-and-publish-app.mjs demo "$VERSION" "$APPHUB_CHANNEL"
 
       - name: Build and upload signed catalog app update
         if: inputs.include_hub != 'true' && inputs.publish_hub_update != 'true' && inputs.catalog_product_id != ''
@@ -96,7 +96,7 @@ jobs:
           op run
           --env-file=.github/op/tamber-signing.env
           --
-          node Scripts/publish-generated-catalog-app-version.mjs
+          node Scripts/build-and-publish-app.mjs "$APPHUB_CATALOG_PRODUCT_ID" "$VERSION" "$APPHUB_CHANNEL"
 
       - name: Build and upload signed AppHub update
         if: inputs.publish_hub_update == 'true'
@@ -104,7 +104,7 @@ jobs:
           op run
           --env-file=.github/op/tamber-signing.env
           --
-          node Scripts/publish-remote-hub-version.mjs
+          node Scripts/build-and-publish-app.mjs apphub "$VERSION" "$APPHUB_CHANNEL"
 
       - name: Create or update release
         if: inputs.include_hub == 'true' && inputs.publish_hub_update != 'true'

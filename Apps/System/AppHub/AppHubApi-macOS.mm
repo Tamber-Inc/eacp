@@ -4,6 +4,9 @@
 
 #include <mach-o/dyld.h>
 
+#import <AppKit/NSWorkspace.h>
+#import <Foundation/Foundation.h>
+
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -88,6 +91,33 @@ bool createAppBundleZip(const fs::path& bundle, const fs::path& output)
                                   bundle.string(),
                                   output.string()});
     return result.exited && result.exitCode == 0;
+}
+
+bool isAppBundleRunning(std::string_view appPath)
+{
+    auto ec = std::error_code();
+    auto path = fs::weakly_canonical(fs::path(std::string(appPath)), ec);
+    if (ec)
+        path = fs::path(std::string(appPath));
+
+    @autoreleasepool
+    {
+        auto target = [NSURL fileURLWithPath:
+                                 [NSString stringWithUTF8String:path.string()
+                                                                    .c_str()]
+                               isDirectory:YES];
+        for (NSRunningApplication* app in [[NSWorkspace sharedWorkspace]
+                 runningApplications])
+        {
+            auto* bundleURL = [app bundleURL];
+            if (bundleURL == nil)
+                continue;
+            if ([bundleURL isEqual:target])
+                return true;
+        }
+    }
+
+    return false;
 }
 
 namespace

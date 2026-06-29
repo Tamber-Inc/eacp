@@ -211,6 +211,12 @@ bool createAppBundleZip(const fs::path&, const fs::path&)
     return false;
 }
 
+bool isAppBundleRunning(std::string_view appPath)
+{
+    return launchProbe().shouldLaunch
+        && launchProbe().launchedPath == std::string(appPath);
+}
+
 LaunchResult openAppBundle(std::string_view appPath)
 {
     launchProbe().launchedPath = std::string(appPath);
@@ -426,6 +432,7 @@ auto tUpdateProductUpdatesOnlyRequestedInstalledProduct =
                     "1.0.0",
                     (root / "installed" / "shared.clap").string(),
                     "old-hash");
+    writeFile(root / "running" / "shared.clap.running", "stale");
 
     auto api = Api::AppHubApi(root);
     auto result = api.updateProduct({.productId = "shared.clap"});
@@ -436,12 +443,58 @@ auto tUpdateProductUpdatesOnlyRequestedInstalledProduct =
     auto* receipt = Updater::findReceipt(receipts, "shared.clap");
 
     check(result.ok);
+    check(!fs::exists(root / "running" / "shared.clap.running"));
     check(receipt != nullptr);
     if (receipt != nullptr)
     {
         check(receipt->version == "2.0.0");
         check(receipt->artifactSha256 == artifactHash);
     }
+};
+
+auto tUpdateProductClearsStaleAppRunningMarker =
+    test("AppHub/updateProductClearsStaleAppRunningMarker") = []
+{
+    auto root = testRoot("stale-app-running-marker");
+    auto artifact = root / "artifacts" / "maze.app.zip";
+    writeFile(artifact, "maze-v2");
+
+    auto artifactHash = eacp::Crypto::sha256File(artifact.string());
+
+    auto product = makeAppProduct();
+    product.latestVersion = "2.0.0";
+    auto productArtifact = Updater::ProductArtifact();
+    productArtifact.platform = Updater::Platform::MacOS;
+    productArtifact.architecture = Updater::Architecture::Universal;
+    productArtifact.url = "file://" + artifact.string();
+    productArtifact.sha256 = artifactHash;
+    product.artifacts.add(productArtifact);
+
+    auto catalog = Updater::ProductCatalog();
+    catalog.catalogVersion = 2;
+    catalog.signature = "test";
+    catalog.products.add(product);
+    writeCatalogAt(root / "catalog.json", catalog);
+
+    auto appPath = (root / "Installed" / "Maze.app").string();
+    writeReceipt(root, appPath);
+    writeFile(root / "running" / "com.eacp.maze.running", "stale");
+
+    launchProbe() = {};
+    helperProbe() = {};
+    auto api = Api::AppHubApi(root);
+    auto result = api.updateProduct({.productId = "com.eacp.maze"});
+    auto helper = Updater::MockPrivilegedHelper(
+        Updater::MockHelperOptions {.root = root.string(),
+                                    .stagingRoot = (root / "staging").string()});
+    auto receipts = helper.receipts();
+    auto* receipt = Updater::findReceipt(receipts, "com.eacp.maze");
+
+    check(result.ok);
+    check(!fs::exists(root / "running" / "com.eacp.maze.running"));
+    check(receipt != nullptr);
+    if (receipt != nullptr)
+        check(receipt->version == "2.0.0");
 };
 
 auto tSetChannelPersistsSelectedChannel =

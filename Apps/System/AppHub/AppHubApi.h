@@ -617,10 +617,74 @@ inline HubProductKind productKindFrom(Updater::PackageKind kind)
     return HubProductKind::Blob;
 }
 
-inline bool isRunning(const fs::path& root, const std::string& productId)
+inline bool hasRunningMarker(const fs::path& root, const std::string& productId)
 {
     auto ec = std::error_code();
     return fs::exists(runningPath(root, productId), ec);
+}
+
+inline void clearRunningMarker(const fs::path& root, const std::string& productId)
+{
+    auto ec = std::error_code();
+    fs::remove(runningPath(root, productId), ec);
+}
+
+inline std::optional<fs::path> appBundleFromReceipt(
+    const Updater::ProductReceipt& receipt)
+{
+    auto rootPath = fs::path(receipt.installPath);
+    if (receipt.installPath.size() >= 4
+        && receipt.installPath.compare(receipt.installPath.size() - 4, 4, ".app")
+               == 0)
+    {
+        return rootPath;
+    }
+
+    auto ec = std::error_code();
+    if (!fs::exists(rootPath, ec))
+        return std::nullopt;
+
+    for (const auto& entry: fs::directory_iterator(rootPath, ec))
+    {
+        if (!ec && entry.is_directory() && entry.path().extension() == ".app")
+            return entry.path();
+    }
+
+    return std::nullopt;
+}
+
+inline std::optional<fs::path> appBundleForProduct(
+    const Updater::ProductCatalog& catalog,
+    const eacp::Vector<Updater::ProductReceipt>& receipts,
+    const std::string& productId)
+{
+    if (auto* receipt = Updater::findReceipt(receipts, productId))
+    {
+        if (auto app = appBundleFromReceipt(*receipt))
+            return app;
+    }
+
+    auto* product = Updater::findProduct(catalog, productId);
+    if (product != nullptr && !product->bundleName.empty())
+        return AppHub::installedAppBundlePath(product->bundleName);
+
+    return std::nullopt;
+}
+
+inline bool isRunning(const fs::path& root,
+                      const std::string& productId,
+                      const std::optional<fs::path>& appBundle)
+{
+    if (appBundle)
+    {
+        auto running = AppHub::isAppBundleRunning(appBundle->string());
+        if (!running)
+            clearRunningMarker(root, productId);
+        return running;
+    }
+
+    clearRunningMarker(root, productId);
+    return false;
 }
 
 inline std::string executableVersion(std::string_view executable)
@@ -821,7 +885,14 @@ public:
                        "Planning product update",
                        request.productId);
 
-        if (Detail::isRunning(root, request.productId))
+        auto catalog = Detail::loadCatalogContaining(root, request.productId);
+        auto helper = Detail::makeMockHelper(root);
+        auto receipts = helper.receipts();
+        if (Detail::isRunning(root,
+                              request.productId,
+                              Detail::appBundleForProduct(catalog,
+                                                          receipts,
+                                                          request.productId)))
         {
             auto message = "Close running app before updating";
             refreshState(message);
@@ -829,10 +900,8 @@ public:
             return fail(message);
         }
 
-        auto catalog = Detail::loadCatalogContaining(root, request.productId);
-        auto helper = Detail::makeMockHelper(root);
         auto plan = Updater::planUpdateProduct(catalog,
-                                               helper.receipts(),
+                                               receipts,
                                                request.productId,
                                                Detail::makeTarget(),
                                                Detail::stagingRoot(root).string());
@@ -871,7 +940,7 @@ public:
                        request.productId);
         auto app = std::optional<fs::path>();
         if (receipt != nullptr)
-            app = installedAppBundle(*receipt);
+            app = Detail::appBundleFromReceipt(*receipt);
         if (!app && product != nullptr && !product->bundleName.empty())
             app = AppHub::installedAppBundlePath(product->bundleName);
 
@@ -919,7 +988,11 @@ public:
 
         for (const auto& receipt: receipts)
         {
-            if (Detail::isRunning(root, receipt.productId))
+            if (Detail::isRunning(root,
+                                  receipt.productId,
+                                  Detail::appBundleForProduct(catalog,
+                                                              receipts,
+                                                              receipt.productId)))
             {
                 auto message = "Close running apps before updating";
                 refreshState(message);
@@ -1379,35 +1452,6 @@ private:
                           Updater::receiptToJson(receipt));
     }
 
-    std::optional<fs::path> installedAppBundle(
-        const Updater::ProductReceipt& receipt) const
-    {
-        auto rootPath = fs::path(receipt.installPath);
-        if (receipt.installPath.size() >= 4
-            && receipt.installPath.compare(receipt.installPath.size() - 4,
-                                           4,
-                                           ".app")
-                   == 0)
-        {
-            return rootPath;
-        }
-
-        auto ec = std::error_code();
-        if (!fs::exists(rootPath, ec))
-            return std::nullopt;
-
-        for (const auto& entry: fs::directory_iterator(rootPath, ec))
-        {
-            if (!ec && entry.is_directory()
-                && entry.path().extension() == ".app")
-            {
-                return entry.path();
-            }
-        }
-
-        return std::nullopt;
-    }
-
     void refreshState(const std::string& detail, bool preferRemote = false)
     {
         Detail::reconcileSelectedChannel(root);
@@ -1458,7 +1502,11 @@ private:
                                                      receipt->version)
                                  ? HubInstallState::UpdateAvailable
                                  : HubInstallState::Installed;
-                if (Detail::isRunning(root, product.id))
+                if (Detail::isRunning(root,
+                                      product.id,
+                                      Detail::appBundleForProduct(catalog,
+                                                                  receipts,
+                                                                  product.id)))
                     view.state = HubInstallState::Running;
             }
 

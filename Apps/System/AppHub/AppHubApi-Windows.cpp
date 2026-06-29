@@ -85,6 +85,11 @@ bool createAppBundleZip(const fs::path&, const fs::path&)
     return false;
 }
 
+bool isAppBundleRunning(std::string_view)
+{
+    return false;
+}
+
 LaunchResult openAppBundle(std::string_view appPath)
 {
 #if defined(_WIN32)
