@@ -36,9 +36,21 @@ jobs:
       GH_TOKEN: ${{ github.token }}
 
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
 
-      - uses: 1password/install-cli-action@v3
+      - name: Ensure 1Password CLI
+        run: |
+          set -euo pipefail
+          if ! command -v op >/dev/null 2>&1; then
+            brew install --cask 1password-cli
+          fi
+          op --version
 
       - name: Capture existing hub artifact hash
         if: inputs.include_hub != 'true' && inputs.publish_hub_update != 'true'
