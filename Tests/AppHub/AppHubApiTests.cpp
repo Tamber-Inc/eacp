@@ -2,6 +2,7 @@
 
 #include <NanoTest/NanoTest.h>
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -62,6 +63,11 @@ void writeCatalog(const fs::path& root)
     writeFile(root / "catalog.json", Updater::catalogToJson(catalog));
 }
 
+void writeCatalogAt(const fs::path& path, const Updater::ProductCatalog& catalog)
+{
+    writeFile(path, Updater::catalogToJson(catalog));
+}
+
 void writeReceipt(const fs::path& root, const std::string& installPath)
 {
     auto receipt = Updater::ProductReceipt();
@@ -80,6 +86,35 @@ void writeReceipt(const fs::path& root, const std::string& installPath)
     writeFile(fs::path(helper.receiptsRoot()) / "com.eacp.maze.json",
               Updater::receiptToJson(receipt));
 }
+
+class ScopedEnvironmentVariable
+{
+public:
+    ScopedEnvironmentVariable(const std::string& name, const std::string& value)
+        : name_(name)
+    {
+#if defined(_WIN32)
+        _putenv_s(name_.c_str(), value.c_str());
+#else
+        ::setenv(name_.c_str(), value.c_str(), 1);
+#endif
+    }
+
+    ~ScopedEnvironmentVariable()
+    {
+#if defined(_WIN32)
+        _putenv_s(name_.c_str(), "");
+#else
+        ::unsetenv(name_.c_str());
+#endif
+    }
+
+    ScopedEnvironmentVariable(const ScopedEnvironmentVariable&) = delete;
+    ScopedEnvironmentVariable& operator=(const ScopedEnvironmentVariable&) = delete;
+
+private:
+    std::string name_;
+};
 } // namespace
 
 namespace AppHub
@@ -218,4 +253,45 @@ auto tOpenProductFallsBackToCatalogBundleWhenReceiptIsMissing =
     check(launchProbe().launchedPath
           == AppHub::installedAppBundlePath("Maze.app").string());
     check(fs::exists(root / "running" / "com.eacp.maze.running"));
+};
+
+auto tLoadsConfiguredDevCatalog =
+    test("AppHub/loadsConfiguredDevCatalog") = []
+{
+    auto root = testRoot("configured-dev-catalog");
+    auto catalogPath = root / "generated" / "apphub-catalog.json";
+
+    auto product = Updater::Product();
+    product.id = "com.eacp.webviewtodo";
+    product.name = "WebView Todo";
+    product.kind = Updater::PackageKind::App;
+    product.bundleName = "WebView Todo.app";
+    product.channel = "stable";
+    product.latestVersion = "1.0.0";
+
+    auto artifact = Updater::ProductArtifact();
+    artifact.platform = Updater::Platform::MacOS;
+    artifact.architecture = Updater::Architecture::Universal;
+    artifact.url = "file:///tmp/webviewtodo.zip";
+    artifact.sha256 = "test";
+    product.artifacts.add(artifact);
+
+    auto catalog = Updater::ProductCatalog();
+    catalog.catalogVersion = 42;
+    catalog.signature = "test";
+    catalog.products.add(product);
+    writeCatalogAt(catalogPath, catalog);
+
+    auto catalogOverride = ScopedEnvironmentVariable(
+        "EACP_APPHUB_DEV_CATALOG_PATH", catalogPath.string());
+    auto api = Api::AppHubApi(root);
+    auto state = api.getHubState();
+
+    check(state.catalogVersion == 42);
+    check(state.products.size() == 1);
+    if (state.products.size() == 1)
+    {
+        check(state.products[0].id == "com.eacp.webviewtodo");
+        check(state.products[0].name == "WebView Todo");
+    }
 };

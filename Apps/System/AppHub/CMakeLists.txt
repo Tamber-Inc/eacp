@@ -58,6 +58,7 @@ eacp_add_webview_app(AppHub
     LINK_LIBRARIES eacp-updater eacp-network
     REACT)
 
+set_target_properties(AppHub PROPERTIES EACP_CATALOG_EXCLUDE TRUE)
 target_sources(AppHub PRIVATE App.h AppHubPlatform.h)
 target_link_libraries(AppHub PRIVATE eacp-updater eacp-network)
 eacp_set_gui_subsystem(AppHub)

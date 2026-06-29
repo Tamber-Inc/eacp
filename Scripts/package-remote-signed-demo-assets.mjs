@@ -6,6 +6,7 @@ import {
   cleanDir,
   env,
   log,
+  readText,
   repoRoot,
   requireMacOS,
   run,
@@ -21,8 +22,10 @@ import {
   verifyMachODeploymentTargetAtMost,
 } from './lib/macos-signing.mjs';
 import {
-  makeCatalog,
-} from './lib/apphub-catalog.mjs';
+  findCatalogAppBundle,
+  generateCatalogFromProducts,
+  readGeneratedCatalog,
+} from './lib/apphub-generated-catalog.mjs';
 
 const version = env('VERSION', '1.0.0');
 const releaseTag = env('RELEASE_TAG', `remote-demo-v${version}`);
@@ -39,11 +42,6 @@ const demoZip = `TamberLocalUpdateDemo-${version}.app.zip`;
 const demoAppName = 'Tamber Local Update Demo.app';
 const demoBinaryName = 'Tamber Local Update Demo';
 const productId = 'com.tamber.RealUpdateDemo';
-const mazeZip = `Maze-${version}.app.zip`;
-const teapotZip = `Teapot-${version}.app.zip`;
-const runtimeBlob = `shared-onnxruntime-${version}.blob`;
-const modelBlob = `shared-clap-${version}.blob`;
-
 requireMacOS('Remote signed demo packaging');
 
 log('Import Tamber Developer ID signing identity');
@@ -59,6 +57,11 @@ run('cmake', [
   `-DCMAKE_OSX_DEPLOYMENT_TARGET=${macOSDeploymentTarget}`,
   `-DEACP_APPHUB_VERSION=${version}`,
   `-DEACP_REAL_UPDATE_DEMO_VERSION=${version}`,
+  `-DEACP_CATALOG_DEFAULT_VERSION=${version}`,
+  '-DEACP_APPHUB_DISABLE_DEV_CATALOG=ON',
+  `-DEACP_APPHUB_DEMO_MANIFEST_URL=${releaseBaseUrl}/manifest.json`,
+  `-DEACP_APPHUB_MANIFEST_URL=${releaseBaseUrl}/hub-manifest.json`,
+  `-DEACP_APPHUB_CATALOG_URL=${releaseBaseUrl}/apphub-catalog.json`,
 ]);
 
 log('Build signed-demo targets');
@@ -68,8 +71,7 @@ run('cmake', [
   '--target',
   'AppHub',
   'RealUpdateDemo',
-  'Maze',
-  'Teapot',
+  'eacp-apphub-local-catalog',
 ]);
 
 const appHubApp = join(buildDir, 'Apps', 'System', 'AppHub', 'AppHub.app');
@@ -81,8 +83,7 @@ const appHubHelper = join(
   'com.tamber.AppHub.PrivilegedHelper',
 );
 const demoApp = join(buildDir, 'Apps', 'System', 'RealUpdateDemo', demoAppName);
-const mazeApp = join(buildDir, 'Apps', 'GPU', 'Maze', 'Maze.app');
-const teapotApp = join(buildDir, 'Apps', 'GPU', 'Teapot', 'Teapot.app');
+const generatedCatalog = readGeneratedCatalog(buildDir);
 
 log('Sign AppHub helper and app');
 signPath(appHubHelper);
@@ -97,17 +98,12 @@ verifyMachODeploymentTargetAtMost(
   macOSDeploymentTarget,
 );
 
-log('Sign AppHub catalog apps');
-signPath(mazeApp);
-signPath(teapotApp);
-verifyMachODeploymentTargetAtMost(
-  join(mazeApp, 'Contents', 'MacOS', 'Maze'),
-  macOSDeploymentTarget,
-);
-verifyMachODeploymentTargetAtMost(
-  join(teapotApp, 'Contents', 'MacOS', 'Teapot'),
-  macOSDeploymentTarget,
-);
+log(`Sign ${generatedCatalog.products.length} AppHub catalog apps`);
+for (const product of generatedCatalog.products) {
+  const appBundle = findCatalogAppBundle(buildDir, product);
+  signPath(appBundle);
+  verifyCodeSignature(appBundle);
+}
 
 log('Verify Demo App version');
 run(join(demoApp, 'Contents', 'MacOS', demoBinaryName), ['--version']);
@@ -116,19 +112,6 @@ log('Package release assets');
 cleanDir(outDir);
 run('ditto', ['-c', '-k', '--keepParent', appHubApp, join(outDir, appHubZip)]);
 run('ditto', ['-c', '-k', '--keepParent', demoApp, join(outDir, demoZip)]);
-run('ditto', ['-c', '-k', '--keepParent', mazeApp, join(outDir, mazeZip)]);
-run('ditto', ['-c', '-k', '--keepParent', teapotApp, join(outDir, teapotZip)]);
-
-writeJson(join(outDir, runtimeBlob), {
-  name: 'ONNX Runtime placeholder',
-  version,
-  note: 'Demo shared runtime blob installed once by AppHub.',
-});
-writeJson(join(outDir, modelBlob), {
-  name: 'CLAP Model placeholder',
-  version,
-  note: 'Demo shared model blob installed once and shared by Maze/Teapot.',
-});
 
 log('Verify packaged AppHub artifact');
 const packagedVerifyDir = join(buildDir, 'packaged-apphub-verify');
@@ -142,17 +125,23 @@ verifyAppHubPrivilegedHelper(packagedAppHub);
 log('Verify packaged catalog app artifacts');
 const packagedAppsVerifyDir = join(buildDir, 'packaged-catalog-apps-verify');
 cleanDir(packagedAppsVerifyDir);
-run('ditto', ['-x', '-k', join(outDir, mazeZip), packagedAppsVerifyDir]);
-run('ditto', ['-x', '-k', join(outDir, teapotZip), packagedAppsVerifyDir]);
-verifyCodeSignature(join(packagedAppsVerifyDir, 'Maze.app'));
-verifyCodeSignature(join(packagedAppsVerifyDir, 'Teapot.app'));
+generateCatalogFromProducts({
+  buildDir,
+  products: generatedCatalog.products,
+  outDir,
+  catalogPath: join(outDir, 'apphub-catalog.json'),
+  catalogVersion: Number.parseInt(version.split('.')[0], 10) || 1,
+  channel: 'stable',
+  releaseBaseUrl,
+});
+for (const product of generatedCatalog.products) {
+  const artifactName = `${product.id}-${product.latestVersion}.app.zip`;
+  run('ditto', ['-x', '-k', join(outDir, artifactName), packagedAppsVerifyDir]);
+  verifyCodeSignature(join(packagedAppsVerifyDir, product.bundleName));
+}
 
 const demoSha = sha256File(join(outDir, demoZip));
 const appHubSha = sha256File(join(outDir, appHubZip));
-const mazeSha = sha256File(join(outDir, mazeZip));
-const teapotSha = sha256File(join(outDir, teapotZip));
-const runtimeSha = sha256File(join(outDir, runtimeBlob));
-const modelSha = sha256File(join(outDir, modelBlob));
 const manifest = {
   productId,
   name: 'Tamber Local Update Demo',
@@ -177,19 +166,7 @@ const hubManifest = {
 };
 writeJson(join(outDir, 'hub-manifest.json'), hubManifest);
 
-const catalog = makeCatalog({
-  version,
-  releaseBaseUrl,
-  runtimeBlob,
-  runtimeSha,
-  modelBlob,
-  modelSha,
-  mazeZip,
-  mazeSha,
-  teapotZip,
-  teapotSha,
-});
-writeJson(join(outDir, 'apphub-catalog.json'), catalog);
+const catalog = JSON.parse(readText(join(outDir, 'apphub-catalog.json')));
 
 log('Release assets');
 run('ls', ['-lh', outDir]);
