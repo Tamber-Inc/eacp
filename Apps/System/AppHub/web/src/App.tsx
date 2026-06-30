@@ -353,14 +353,35 @@ function ProductRow({ product }: { product: HubProduct })
 
 function ResourceCard({ product }: { product: HubProduct })
 {
+    const installed = product.state !== 'NotInstalled';
+    const updateAvailable = product.state === 'UpdateAvailable';
+    const installOrUpdate = updateAvailable
+        ? () => void backend.updateProduct({ productId: product.id })
+        : () => void backend.installProduct({ productId: product.id });
+
     return (
         <article className="resource-card">
-            <span className="eyebrow">{productKindLabels[product.kind]}</span>
-            <h3>{product.name}</h3>
-            <p>{product.id}</p>
+            <div>
+                <span className="eyebrow">{productKindLabels[product.kind]}</span>
+                <h3>{product.name}</h3>
+                <p>{product.id}</p>
+            </div>
             <div className="resource-footer">
                 <span>{installStateLabels[product.state]}</span>
-                <span>{product.installedVersion || product.latestVersion || '-'}</span>
+                <span>{product.installedVersion || '-'} / {product.latestVersion || '-'}</span>
+            </div>
+            <div className="button-row">
+                <button
+                    type="button"
+                    className="primary"
+                    onClick={installOrUpdate}
+                >
+                    {updateAvailable
+                        ? 'Update'
+                        : installed
+                            ? 'Reinstall'
+                            : 'Install'}
+                </button>
             </div>
         </article>
     );

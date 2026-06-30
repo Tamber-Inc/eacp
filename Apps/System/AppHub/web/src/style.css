@@ -400,6 +400,9 @@ dd
 
 .resource-card
 {
+    display: grid;
+    gap: 14px;
+    align-content: start;
     padding: 16px;
 }
 
@@ -407,7 +410,6 @@ dd
 {
     justify-content: space-between;
     gap: 12px;
-    margin-top: 16px;
     color: #9db0b1;
     font-size: 13px;
 }
