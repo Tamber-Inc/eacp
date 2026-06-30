@@ -1,0 +1,15 @@
+{
+  "schema": "com.eacp.JsonViewDemo",
+  "version": "1.0.1",
+  "message": "This JSON blob was updated independently from JsonView1 and JsonView2.",
+  "sharedProductId": "shared.json-view-demo",
+  "publishedTo": "HelloEyal",
+  "consumers": [
+    "com.eacp.jsonview1",
+    "com.eacp.jsonview2"
+  ],
+  "proof": {
+    "kind": "shared-data-only-update",
+    "appsRebuilt": false
+  }
+}
